@@ -83,7 +83,7 @@ def test_end_to_end_local_scan_persists_and_writes_three_reports(tmp_path, monke
     assert summary["postings_fetched"] == 1
     assert summary["new_identities"] == 1
     assert summary["qualified_candidates"] == 1
-    assert len(summary["reports"]) == 3
+    assert len(summary["reports"]) == 4
     assert all(__import__("pathlib").Path(path).exists() for path in summary["reports"])
     assert all(source.closed for source in created.values())
     with orchestrator.store._connect() as db:
