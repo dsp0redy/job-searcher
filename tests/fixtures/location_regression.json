@@ -1,0 +1,34 @@
+[
+  {
+    "location": "Bengaluru, Karnataka, India",
+    "allowed": true
+  },
+  {
+    "location": "Bangalore, India",
+    "allowed": true
+  },
+  {
+    "location": "Hyderabad, Telangana, India",
+    "allowed": true
+  },
+  {
+    "location": "Pune, Maharashtra, India",
+    "allowed": false
+  },
+  {
+    "location": "Chennai, Tamil Nadu",
+    "allowed": false
+  },
+  {
+    "location": "Remote - India",
+    "allowed": false
+  },
+  {
+    "location": "India",
+    "allowed": false
+  },
+  {
+    "location": "NotBengaluru, India",
+    "allowed": false
+  }
+]
