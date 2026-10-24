@@ -188,3 +188,41 @@ def test_host_pacing_records_host_and_waits_on_following_request(monkeypatch):
     assert len(waits) == 1
     assert waits[0] > 0
     assert "example.test" in base_module._HOST_NEXT_REQUEST
+
+
+
+def test_request_json_passes_optional_get_and_post_arguments(monkeypatch):
+    source = ConcreteSource()
+    calls = []
+    def get(url, **kwargs):
+        calls.append(("GET", url, kwargs))
+        return httpx.Response(200, json={"method": "get"}, request=httpx.Request("GET", url))
+    def post(url, **kwargs):
+        calls.append(("POST", url, kwargs))
+        return httpx.Response(200, json={"method": "post"}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(source.client, "get", get)
+    monkeypatch.setattr(source.client, "post", post)
+    monkeypatch.setattr(source, "_wait_for_host", lambda _: None)
+    try:
+        assert source.request_json("GET", "https://example.test/get", params={"q": "c++"}) == {"method": "get"}
+        assert source.request_json("POST", "https://example.test/post", params={"page": "1"},
+                                   json_body={"searchText": "linux"}) == {"method": "post"}
+        assert calls[0][2]["params"] == {"q": "c++"}
+        assert calls[1][2] == {"params": {"page": "1"}, "json": {"searchText": "linux"}}
+    finally:
+        source.close()
+
+
+def test_request_json_post_omits_empty_optional_arguments(monkeypatch):
+    source = ConcreteSource()
+    calls = []
+    def post(url, **kwargs):
+        calls.append(kwargs)
+        return httpx.Response(200, json={}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(source.client, "post", post)
+    monkeypatch.setattr(source, "_wait_for_host", lambda _: None)
+    try:
+        assert source.request_json("POST", "https://example.test/post") == {}
+        assert calls == [{}]
+    finally:
+        source.close()
