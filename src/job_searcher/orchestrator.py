@@ -10,7 +10,7 @@ from .adapters.lever import LeverAdapter
 from .adapters.workday import WorkdayAdapter
 from .ai_matching import AIResumeMatcher, MatchResult
 from .config import AppConfig
-from .matching import score_job
+from .matching import is_allowed_location, score_job
 from .models import Job
 from .notifications import GitHubIssuePublisher
 from .reporting import write_reports
@@ -81,8 +81,14 @@ class SearchOrchestrator:
             inserted = self.store.upsert_jobs(all_jobs)
             cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.search.posted_within_days)
             candidates: list[tuple[Job, dict[str, Any]]] = []
+            excluded_by_location = 0
+            excluded_by_freshness = 0
             for job in all_jobs:
+                if not is_allowed_location(job.location, self.config.profile):
+                    excluded_by_location += 1
+                    continue
                 if job.posted_at and job.posted_at < cutoff:
+                    excluded_by_freshness += 1
                     continue
                 local_match = score_job(job, self.config.profile)
                 if int(local_match["score"]) >= self.config.search.minimum_local_score:
@@ -217,6 +223,8 @@ class SearchOrchestrator:
                 "postings_fetched": fetched_count,
                 "new_identities": inserted,
                 "qualified_candidates": len(rows),
+                "excluded_by_location": excluded_by_location,
+                "excluded_by_freshness": excluded_by_freshness,
                 "matching": provider if ai_matcher else (
                     "deterministic local scoring (AI unavailable)" if provider != "none"
                     else "deterministic local scoring"
