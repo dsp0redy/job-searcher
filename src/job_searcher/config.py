@@ -39,6 +39,8 @@ class MatchingConfig(BaseModel):
     threshold: int = Field(default=65, ge=0, le=100)
     max_jobs_per_ai_batch: int = Field(default=8, ge=1, le=30)
     max_ai_jobs_per_scan: int = Field(default=40, ge=1, le=200)
+    input_cost_usd_per_million_tokens: float | None = Field(default=None, ge=0, le=100000)
+    output_cost_usd_per_million_tokens: float | None = Field(default=None, ge=0, le=100000)
 
 
 class SourcesConfig(BaseModel):
