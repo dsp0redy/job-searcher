@@ -22,10 +22,11 @@ _RELATIVE_POSTED = re.compile(r"(today|yesterday|(?:posted\s*)?(\d+)\+?\s*days?\
 class WorkdayAdapter(JobSource):
     name = "workday"
 
-    def __init__(self, career_urls: list[str], timeout: float = 20, max_pages: int = 5) -> None:
+    def __init__(self, career_urls: list[str], timeout: float = 20, max_pages: int = 5, detail_limit: int = 25) -> None:
         super().__init__(timeout)
         self.career_urls = career_urls
         self.max_pages = max_pages
+        self.detail_limit = max(0, detail_limit)
 
     @staticmethod
     def parse_career_url(url: str) -> tuple[str, str, str]:
@@ -77,6 +78,7 @@ class WorkdayAdapter(JobSource):
 
             company = tenant.replace("-", " ").replace("_", " ").title()
             endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+            details_fetched = 0
             for page in range(self.max_pages):
                 try:
                     response = self.client.post(
@@ -111,7 +113,10 @@ class WorkdayAdapter(JobSource):
                     posted_at = None
                     employment_type = None
                     try:
+                        if details_fetched >= self.detail_limit:
+                            raise RuntimeError("Per-site detail request limit reached")
                         detail_response = self.client.get(detail_url)
+                        details_fetched += 1
                         detail_response.raise_for_status()
                         detail = detail_response.json()
                         info = detail.get("jobPostingInfo", {}) if isinstance(detail, dict) else {}
@@ -132,7 +137,8 @@ class WorkdayAdapter(JobSource):
                         else:
                             location = str(item.get("locationsText") or "Unknown")
                     except Exception as exc:
-                        LOG.info("Workday details unavailable for %s (%s); using listing fields", path, type(exc).__name__)
+                        if not isinstance(exc, RuntimeError):
+                            LOG.info("Workday details unavailable for %s (%s); using listing fields", path, type(exc).__name__)
                         location = str(item.get("locationsText") or "Unknown")
 
                     jobs.append(Job(
