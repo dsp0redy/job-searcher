@@ -130,7 +130,6 @@ class AIResumeMatcher:
                     raise
                 LOG.warning("AI provider request had a transient network error; retrying attempt %d/%d", attempt + 2, max_attempts)
             time.sleep(min(2 ** attempt, 8))
-        raise RuntimeError("AI request retries exhausted")
 
     def _request(self, prompt: str) -> str:
         if self.provider == "gemini":
@@ -163,9 +162,10 @@ class AIResumeMatcher:
             )
 
         # OpenAI-compatible APIs include Groq and OpenRouter.
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
         response = self._post_with_retries(
             f"{self.base_url}/chat/completions",
             headers=headers,
