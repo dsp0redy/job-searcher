@@ -78,3 +78,27 @@ def test_matcher_can_load_a_local_text_resume_file(
         assert matcher.resume_text == "C++ Linux developer"
     finally:
         matcher.close()
+
+
+def test_cache_key_changes_when_resume_text_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("RESUME_FILE", raising=False)
+    monkeypatch.setenv("RESUME_TEXT", "C++ developer")
+    first = AIResumeMatcher("gemini")
+    job = Job(
+        source="greenhouse",
+        source_id="REQ-7",
+        company="Example",
+        title="Linux Engineer",
+        location="India",
+        url="https://example.com/jobs/7",
+    )
+    first_key = first.cache_key(job)
+    first.close()
+
+    monkeypatch.setenv("RESUME_TEXT", "Python developer")
+    second = AIResumeMatcher("gemini")
+    try:
+        assert second.cache_key(job) != first_key
+    finally:
+        second.close()
