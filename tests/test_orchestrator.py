@@ -454,8 +454,13 @@ def test_all_failed_greenhouse_sites_do_not_count_as_success(tmp_path, monkeypat
             super().__init__("workday", [])
             self.site_status = {}
 
+    class EmptyLever(FakeSource):
+        def __init__(self, *args, **kwargs):
+            super().__init__("lever", [])
+            self.site_slugs = []
+
     monkeypatch.setattr(orchestrator_module, "GreenhouseAdapter", FailedGreenhouse)
-    monkeypatch.setattr(orchestrator_module, "LeverAdapter", lambda *a, **kw: FakeSource("lever", []))
+    monkeypatch.setattr(orchestrator_module, "LeverAdapter", EmptyLever)
     monkeypatch.setattr(orchestrator_module, "WorkdayAdapter", EmptyWorkday)
     config = make_config(tmp_path)
     config.sources.lever = []
