@@ -127,3 +127,32 @@ def test_post_retries_transient_timeout(monkeypatch: pytest.MonkeyPatch) -> None
         assert calls == 2
     finally:
         matcher.close()
+
+
+
+def test_ollama_provider_uses_local_endpoint_without_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.setenv("AI_MODEL", "qwen2.5:3b")
+    monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
+    matcher = AIResumeMatcher("ollama")
+    try:
+        assert matcher.base_url == "http://127.0.0.1:11434/v1"
+        assert matcher.model == "qwen2.5:3b"
+        assert matcher.api_key == ""
+    finally:
+        matcher.close()
+
+
+def test_openai_compatible_provider_requires_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
+    with pytest.raises(ValueError, match="AI_BASE_URL"):
+        AIResumeMatcher("openai_compatible")
