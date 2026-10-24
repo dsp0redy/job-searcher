@@ -7,6 +7,7 @@ import os
 import time
 from hashlib import sha256
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 import httpx
@@ -45,10 +46,17 @@ class AIResumeMatcher:
         if not self.api_key:
             raise ValueError(f"matching.provider is '{self.provider}' but {env_name} is not set")
         self.base_url = os.getenv("AI_BASE_URL", "").strip().rstrip("/")
-        if self.provider == "openai_compatible" and not self.base_url:
-            raise ValueError(
-                "matching.provider is 'openai_compatible' but AI_BASE_URL is not set"
-            )
+        if self.provider == "openai_compatible":
+            if not self.base_url:
+                raise ValueError(
+                    "matching.provider is 'openai_compatible' but AI_BASE_URL is not set"
+                )
+            parsed_url = urlparse(self.base_url)
+            if not parsed_url.hostname or parsed_url.scheme not in {"https", "http"}:
+                raise ValueError("AI_BASE_URL must be an absolute HTTP(S) URL")
+            local_hosts = {"localhost", "127.0.0.1", "::1"}
+            if parsed_url.scheme != "https" and parsed_url.hostname not in local_hosts:
+                raise ValueError("AI_BASE_URL must use HTTPS unless it targets localhost")
         self.resume_text = os.getenv("RESUME_TEXT", "").strip()
         resume_file = os.getenv("RESUME_FILE", "").strip()
         if not self.resume_text and resume_file:
