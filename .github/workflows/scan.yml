@@ -44,7 +44,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -56,7 +56,7 @@ jobs:
         run: job-searcher --config config.yml --check-config
       - name: Restore recent report snapshots for weekly digest
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: reports/
           key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
@@ -71,13 +71,13 @@ jobs:
       - name: Save recent report snapshots
         if: success()
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: reports/
           key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload reports (including on failure)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: job-search-reports-${{ github.run_id }}
           path: reports/
@@ -86,7 +86,7 @@ jobs:
 
       - name: Open or update scan-health alert
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- job-searcher-scan-health-alert -->';
@@ -116,7 +116,7 @@ jobs:
             }
       - name: Resolve scan-health alert after a successful scan
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- job-searcher-scan-health-alert -->';
