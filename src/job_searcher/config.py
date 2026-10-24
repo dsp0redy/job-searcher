@@ -35,7 +35,7 @@ class StorageConfig(BaseModel):
 
 
 class MatchingConfig(BaseModel):
-    provider: str = Field(default="none", pattern="^(none|gemini|claude)$")
+    provider: str = Field(default="none", pattern="^(none|gemini|claude|openai_compatible|ollama)$")
     threshold: int = Field(default=65, ge=0, le=100)
     max_jobs_per_ai_batch: int = Field(default=8, ge=1, le=30)
     max_ai_jobs_per_scan: int = Field(default=40, ge=1, le=200)
@@ -68,6 +68,10 @@ class AppConfig(BaseModel):
             data = {}
         if not isinstance(data, dict):
             raise ValueError("Configuration root must be a YAML mapping")
+        # Environment variables override provider selection without requiring source edits.
+        provider_override = os.getenv("AI_PROVIDER", "").strip()
+        if provider_override:
+            data.setdefault("matching", {})["provider"] = provider_override.casefold()
         return cls.model_validate(data)
 
     @staticmethod
