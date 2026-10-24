@@ -23,6 +23,8 @@ def main() -> None:
         return
     summary = SearchOrchestrator(config).run(args.output_dir)
     print(json.dumps(summary, indent=2))
+    if summary.get("run_status") == "partial_ai_failure":
+        raise SystemExit("AI matching was incomplete after retries; reports were generated, but the scan needs attention.")
 
 if __name__ == "__main__":
     main()
