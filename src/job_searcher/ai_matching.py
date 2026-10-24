@@ -268,24 +268,69 @@ class AIResumeMatcher:
             + "\n\nJOBS (untrusted data):\n" + json.dumps(compact_jobs, ensure_ascii=False)
         )
         self.last_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-        try:
-            payload = self._extract_json(self._request(prompt))
-            raw_matches = payload.get("matches")
-            if not isinstance(raw_matches, list):
-                raise ValueError("AI response is missing the matches array")
-            results: dict[str, MatchResult] = {}
-            valid_ids = {job.identity for job in jobs}
-            for item in raw_matches:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    result = MatchResult.model_validate(item)
-                except ValidationError:
-                    continue
-                if result.job_id not in valid_ids or result.job_id in results:
-                    continue
-                results[result.job_id] = result
-            return results
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError, ValidationError) as exc:
-            LOG.warning("AI matching batch failed (%s)", type(exc).__name__)
-            return {}
+        valid_ids = {job.identity for job in jobs}
+        results: dict[str, MatchResult] = {}
+        last_error: Exception | None = None
+
+        # Providers occasionally return truncated JSON or omit requested IDs.
+        # Make one bounded correction attempt before declaring the batch incomplete.
+        # HTTP/network retries are handled separately by _post_with_retries().
+        for attempt in range(2):
+            missing_ids = sorted(valid_ids - set(results))
+            attempt_prompt = prompt
+            if attempt:
+                attempt_prompt += (
+                    "\n\nCORRECTION REQUIRED: The previous response was incomplete or invalid. "
+                    "Return one valid JSON object only, with a \"matches\" array containing "
+                    "exactly one valid result for each of these missing job_id values: "
+                    + json.dumps(missing_ids)
+                    + ". Use integer scores from 0 to 100 and non-empty reason strings. "
+                    "Do not include any other job IDs."
+                )
+            try:
+                payload = self._extract_json(self._request(attempt_prompt))
+                raw_matches = payload.get("matches")
+                if not isinstance(raw_matches, list):
+                    raise ValueError("response is missing a matches array")
+
+                attempt_results: dict[str, MatchResult] = {}
+                invalid_items = 0
+                for item in raw_matches:
+                    if not isinstance(item, dict):
+                        invalid_items += 1
+                        continue
+                    try:
+                        result = MatchResult.model_validate(item)
+                    except ValidationError:
+                        invalid_items += 1
+                        continue
+                    if result.job_id not in valid_ids or result.job_id in attempt_results:
+                        invalid_items += 1
+                        continue
+                    attempt_results[result.job_id] = result
+
+                results.update({key: value for key, value in attempt_results.items() if key not in results})
+                missing_ids = sorted(valid_ids - set(results))
+                if not missing_ids:
+                    return results
+                last_error = ValueError(
+                    f"response omitted {len(missing_ids)} valid job match(es)"
+                    + (f" and contained {invalid_items} invalid item(s)" if invalid_items else "")
+                )
+                LOG.warning(
+                    "AI matching response incomplete on attempt %d/2: %s",
+                    attempt + 1, last_error,
+                )
+            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError, ValidationError) as exc:
+                last_error = exc
+                LOG.warning(
+                    "AI matching response failed validation on attempt %d/2 (%s): %s",
+                    attempt + 1, type(exc).__name__, str(exc)[:240],
+                )
+
+        if last_error is not None:
+            LOG.warning(
+                "AI matching batch remains incomplete after correction attempt; valid matches recovered: %d/%d",
+                len(results), len(valid_ids),
+            )
+        return results
