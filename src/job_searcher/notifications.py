@@ -67,7 +67,15 @@ class GitHubIssuePublisher:
             page += 1
         self._issues_loaded = True
 
-    def publish(self, job: Job, score: int, reason: str, skills: list[str]) -> dict[str, Any]:
+    def publish(
+        self,
+        job: Job,
+        score: int,
+        reason: str,
+        skills: list[str],
+        missing_skills: list[str] | None = None,
+        improvements: list[str] | None = None,
+    ) -> dict[str, Any]:
         digest = self.marker(job)
         marker = f"<!-- job-searcher:{digest} -->"
         try:
@@ -88,10 +96,13 @@ class GitHubIssuePublisher:
                 f"- **Source:** {job.source}\n"
                 f"- **Apply:** {job.url}\n\n"
                 f"### Local matching evidence\n{reason}\n\n"
-                f"### Matched skills\n{', '.join(skills) if skills else 'No configured skills matched.'}\n\n"
-                "This score is a deterministic keyword relevance heuristic, not an interview probability. "
+                f"### Matched skills (local keyword evidence)\n{', '.join(skills) if skills else 'No configured skills matched.'}\n\n"
+                f"### Missing skills (AI mode)\n{', '.join(missing_skills or []) if missing_skills else 'None reported.'}\n\n"
+                f"### Suggested next steps\n"
+                + ("\n".join(f"- {item}" for item in improvements) if improvements else "No suggestions generated.")
+                + "\n\nThe score is a relevance estimate, not an interview probability. "
                 "Review the original job description and requirements before applying.\n\n"
-                f"{marker}"
+                + marker
             )
             response = self.client.post(
                 f"{self.base_url}/issues",
