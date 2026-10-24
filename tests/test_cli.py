@@ -148,9 +148,10 @@ def test_cli_can_set_and_show_local_review_status(monkeypatch, tmp_path, capsys)
         ["job-searcher", "--review-notes", "notes"],
     ],
 )
-def test_cli_rejects_incomplete_review_arguments(monkeypatch, argv):
+def test_cli_rejects_incomplete_review_arguments(monkeypatch, tmp_path, argv):
     monkeypatch.setattr(sys, "argv", argv)
-    monkeypatch.setattr(cli.AppConfig, "load", lambda path: AppConfig())
+    config = AppConfig(storage=StorageConfig(path=str(tmp_path / "jobs.sqlite3")))
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: config)
     with pytest.raises(SystemExit):
         cli.main()
 
