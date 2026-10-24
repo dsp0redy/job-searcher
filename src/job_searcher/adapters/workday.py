@@ -64,8 +64,12 @@ class WorkdayAdapter(JobSource):
         if not match:
             return None
         lowered = match.group(1).casefold()
-        days = 0 if lowered == "today" else 1 if lowered == "yesterday" else int(match.group(2))
-        return datetime.now(timezone.utc) - timedelta(days=days)
+        try:
+            days = 0 if lowered == "today" else 1 if lowered == "yesterday" else int(match.group(2))
+            return datetime.now(timezone.utc) - timedelta(days=days)
+        except (OverflowError, ValueError):
+            # A malformed or absurd relative date should not abort an entire source scan.
+            return None
 
     def fetch(self) -> list[Job]:
         jobs: list[Job] = []
