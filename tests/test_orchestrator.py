@@ -433,3 +433,28 @@ def test_ai_usage_and_cost_are_reported_only_when_rates_are_configured(tmp_path,
     assert summary["ai"]["token_usage"] == {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
     assert summary["ai"]["estimated_cost_usd"] == 0.0004
     assert summary["ai"]["cost_estimate_configured"] is True
+
+
+
+def test_all_failed_greenhouse_sites_do_not_count_as_success(tmp_path, monkeypatch):
+    class FailedGreenhouse:
+        name = "greenhouse"
+        board_tokens = ["broken"]
+        site_status = {}
+        def __init__(self, *args, **kwargs): pass
+        def fetch(self):
+            self.site_status = {"broken": "failed: ValueError"}
+            return []
+        def close(self): pass
+
+    monkeypatch.setattr(orchestrator_module, "GreenhouseAdapter", FailedGreenhouse)
+    monkeypatch.setattr(orchestrator_module, "LeverAdapter", lambda *a, **kw: FakeSource("lever", []))
+    monkeypatch.setattr(orchestrator_module, "WorkdayAdapter", lambda *a, **kw: FakeSource("workday", []))
+    config = make_config(tmp_path)
+    config.sources.lever = []
+    config.sources.workday = []
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["sources"]["greenhouse"] == "failed: 0/1 sites responded"
+    assert summary["sources"]["greenhouse:broken"] == "failed: ValueError"
+    assert summary["source_health"]["successful"] == 0
+    assert summary["run_status"] == "no_sources_succeeded"
