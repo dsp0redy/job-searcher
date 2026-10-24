@@ -1,5 +1,6 @@
 """Adapter for public Lever postings."""
 from __future__ import annotations
+from datetime import datetime, timezone
 from urllib.parse import quote
 from .base import JobSource
 from ..models import Job
