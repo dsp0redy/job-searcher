@@ -56,6 +56,8 @@ class GitHubIssuePublisher:
             if not isinstance(issues, list):
                 raise ValueError("Unexpected GitHub issues response")
             for issue in issues:
+                if not isinstance(issue, dict):
+                    continue
                 # Pull requests also appear in the Issues endpoint.
                 if "pull_request" in issue:
                     continue
@@ -111,6 +113,8 @@ class GitHubIssuePublisher:
             )
             response.raise_for_status()
             issue = response.json()
+            if not isinstance(issue, dict):
+                raise ValueError("Unexpected GitHub issue response")
             self._existing[digest] = issue
             return {"status": "created", "issue_url": issue.get("html_url"), "issue_number": issue.get("number")}
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
