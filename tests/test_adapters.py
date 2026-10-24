@@ -140,3 +140,36 @@ def test_lever_bad_schema_and_network_error_are_isolated(monkeypatch):
         adapter.close()
     assert len(jobs) == 1
     assert jobs[0].company == "good"
+
+
+
+def test_greenhouse_adapter_matches_checked_in_response_fixture(monkeypatch):
+    import json
+    from pathlib import Path
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "greenhouse_jobs.json").read_text(encoding="utf-8"))
+    adapter = GreenhouseAdapter(["fixture-board"])
+    monkeypatch.setattr(adapter, "get_json", lambda url, params: fixture)
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert len(jobs) == 1
+    assert jobs[0].title == "C++ Engineer"
+    assert jobs[0].location == "Bengaluru, India"
+
+
+def test_lever_adapter_matches_checked_in_response_fixture(monkeypatch):
+    import json
+    from pathlib import Path
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "lever_jobs.json").read_text(encoding="utf-8"))
+    adapter = LeverAdapter(["fixture-site"])
+    monkeypatch.setattr(adapter, "get_json", lambda url, params: fixture)
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert len(jobs) == 1
+    assert jobs[0].title == "Embedded Software Engineer"
+    assert jobs[0].location == "Hyderabad, India"
