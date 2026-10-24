@@ -30,12 +30,28 @@ class AIResumeMatcher:
 
     def __init__(self, provider: str, timeout: float = 75) -> None:
         self.provider = provider.casefold()
-        if self.provider not in {"gemini", "claude"}:
-            raise ValueError("AI provider must be 'gemini' or 'claude'")
-        env_name = "GEMINI_API_KEY" if self.provider == "gemini" else "ANTHROPIC_API_KEY"
-        self.api_key = os.getenv(env_name, "").strip()
-        if not self.api_key:
+        supported_providers = {"gemini", "claude", "openai_compatible", "ollama"}
+        if self.provider not in supported_providers:
+            raise ValueError(
+                "AI provider must be one of: gemini, claude, openai_compatible, ollama, none"
+            )
+        env_names = {
+            "gemini": "GEMINI_API_KEY",
+            "claude": "ANTHROPIC_API_KEY",
+            "openai_compatible": "AI_API_KEY",
+            "ollama": "",
+        }
+        env_name = env_names[self.provider]
+        self.api_key = os.getenv(env_name, "").strip() if env_name else ""
+        if self.provider in {"gemini", "claude"} and not self.api_key:
             raise ValueError(f"matching.provider is '{self.provider}' but {env_name} is not set")
+        self.base_url = os.getenv("AI_BASE_URL", "").strip().rstrip("/")
+        if self.provider == "openai_compatible" and not self.base_url:
+            raise ValueError(
+                "matching.provider is 'openai_compatible' but AI_BASE_URL is not set"
+            )
+        if self.provider == "ollama":
+            self.base_url = self.base_url or "http://127.0.0.1:11434/v1"
         self.resume_text = os.getenv("RESUME_TEXT", "").strip()
         resume_file = os.getenv("RESUME_FILE", "").strip()
         if not self.resume_text and resume_file:
@@ -51,18 +67,21 @@ class AIResumeMatcher:
         if not self.resume_text:
             raise ValueError("AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions")
         self.client = httpx.Client(timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)), headers={"User-Agent": "job-searcher/0.1"})
-        self.model = (
-            os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
-            if self.provider == "gemini"
-            else os.getenv("CLAUDE_MODEL", "claude-haiku-5-5").strip()
-        )
+        model_env = {
+            "gemini": ("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+            "claude": ("CLAUDE_MODEL", "claude-haiku-5-5"),
+            "openai_compatible": ("AI_MODEL", "your-model-name"),
+            "ollama": ("AI_MODEL", "qwen2.5:3b"),
+        }
+        model_env_name, default_model = model_env[self.provider]
+        self.model = os.getenv(model_env_name, default_model).strip()
 
     def close(self) -> None:
         self.client.close()
 
     def cache_key(self, job: Job) -> str:
         material = "|".join([
-            self.provider, self.model, self.resume_text, job.identity, job.title,
+            self.provider, self.base_url, self.model, self.resume_text, job.identity, job.title,
             job.location, job.description,
         ])
         return sha256(material.encode("utf-8")).hexdigest()
@@ -113,20 +132,45 @@ class AIResumeMatcher:
             )
             data = response.json()
             return str(data["candidates"][0]["content"]["parts"][0]["text"])
+        if self.provider == "claude":
+            response = self._post_with_retries(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
+                json={
+                    "model": self.model,
+                    "max_tokens": 4096,
+                    "temperature": 0,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+            data = response.json()
+            return "\n".join(
+                str(block.get("text", ""))
+                for block in data.get("content", [])
+                if block.get("type") == "text"
+            )
+
+        # OpenAI-compatible APIs include Groq, OpenRouter, and Ollama's local API.
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         response = self._post_with_retries(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
+            f"{self.base_url}/chat/completions",
+            headers=headers,
             json={
                 "model": self.model,
-                "max_tokens": 4096,
-                "temperature": 0,
-                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Return only a valid JSON object matching the user's requested schema.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
             },
         )
         data = response.json()
-        return "\n".join(
-            str(block.get("text", "")) for block in data.get("content", []) if block.get("type") == "text"
-        )
+        return str(data["choices"][0]["message"]["content"])
 
     def match_batch(self, jobs: list[Job]) -> dict[str, MatchResult]:
         if not jobs:
