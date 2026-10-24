@@ -99,12 +99,18 @@ def test_get_json_does_not_retry_client_errors(monkeypatch):
 def test_get_json_retries_server_errors_then_raises(monkeypatch):
     source = ConcreteSource()
     calls = 0
-    monkeypatch.setattr(source.client, "get", lambda *args, **kwargs: response(503))
+
+    def get(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return response(503)
+
+    monkeypatch.setattr(source.client, "get", get)
     monkeypatch.setattr("time.sleep", lambda _: None)
     try:
         with pytest.raises(httpx.HTTPStatusError):
             source.get_json("https://example.com/jobs")
-        assert calls == 0
+        assert calls == source.MAX_ATTEMPTS
     finally:
         source.close()
 
@@ -144,5 +150,16 @@ def test_get_json_raises_after_network_retries_are_exhausted(monkeypatch):
         with pytest.raises(httpx.ConnectError):
             source.get_json("https://example.com/jobs")
         assert calls == source.MAX_ATTEMPTS
+    finally:
+        source.close()
+
+
+
+def test_get_json_defensive_guard_when_attempt_count_is_zero():
+    source = ConcreteSource()
+    source.MAX_ATTEMPTS = 0
+    try:
+        with pytest.raises(RuntimeError, match="retries exhausted"):
+            source.get_json("https://example.com/jobs")
     finally:
         source.close()
