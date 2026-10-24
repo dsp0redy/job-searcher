@@ -129,8 +129,6 @@ class WorkdayAdapter(JobSource):
                             source_id = str(info.get("jobReqId") or info.get("jobRequisitionId") or source_id)
                             description = self._plain_text(info.get("jobDescription"))
                             detail_posted_at = self._parse_posted_at(info.get("postedOn"))
-                            if detail_posted_at is None:
-                                detail_posted_at = self._parse_posted_at(info.get("startDate"))
                             if detail_posted_at is not None:
                                 posted_at = detail_posted_at
                             employment_type = info.get("timeType")
