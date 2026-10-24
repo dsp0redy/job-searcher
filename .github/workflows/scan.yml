@@ -56,7 +56,7 @@ jobs:
         run: job-searcher --config config.yml --check-config
       - name: Restore recent report snapshots for weekly digest
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: reports/
           key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
@@ -71,7 +71,7 @@ jobs:
       - name: Save recent report snapshots
         if: success()
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: reports/
           key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
