@@ -16,6 +16,7 @@ matching:
   provider: "none"
   threshold: 65
   max_jobs_per_ai_batch: 8
+  max_ai_jobs_per_scan: 40
 sources:
   greenhouse: []
   lever: []
