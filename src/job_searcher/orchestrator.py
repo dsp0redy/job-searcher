@@ -259,7 +259,7 @@ class SearchOrchestrator:
                 (ai_usage["input_tokens"] * input_rate + ai_usage["output_tokens"] * output_rate) / 1_000_000
                 if input_rate is not None and output_rate is not None else None
             )
-            summary = {
+            summary: dict[str, Any] = {
                 "run_id": run_id,
                 "retention": {**retention_summary, "reports": old_reports_pruned},
                 "sources": source_status,
