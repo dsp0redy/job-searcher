@@ -114,6 +114,7 @@ class SearchOrchestrator:
             )
             ai_deferred: set[str] = set()
             ai_cached = 0
+            ai_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             if ai_matcher is not None:
                 ranked = sorted(candidates, key=lambda pair: int(pair[1]["score"]), reverse=True)
                 ai_limit = self.config.matching.max_ai_jobs_per_scan
@@ -138,6 +139,11 @@ class SearchOrchestrator:
                 for offset in range(0, len(uncached), batch_size):
                     batch = uncached[offset:offset + batch_size]
                     results = ai_matcher.match_batch(batch)
+                    usage = getattr(ai_matcher, "last_usage", {})
+                    for token_key in ai_usage:
+                        token_value = usage.get(token_key, 0) if isinstance(usage, dict) else 0
+                        if isinstance(token_value, int) and token_value >= 0:
+                            ai_usage[token_key] += token_value
                     ai_results.update(results)
                     for job in batch:
                         batch_result = results.get(job.identity)
@@ -235,6 +241,12 @@ class SearchOrchestrator:
                 rows.append(row)
 
             paths = write_reports(output_dir, run_id, rows)
+            input_rate = self.config.matching.input_cost_usd_per_million_tokens
+            output_rate = self.config.matching.output_cost_usd_per_million_tokens
+            estimated_ai_cost = (
+                (ai_usage["input_tokens"] * input_rate + ai_usage["output_tokens"] * output_rate) / 1_000_000
+                if input_rate is not None and output_rate is not None else None
+            )
             summary = {
                 "run_id": run_id,
                 "sources": source_status,
@@ -264,6 +276,9 @@ class SearchOrchestrator:
                     "failed": len(ai_failed),
                     "deferred_by_scan_limit": len(ai_deferred),
                     "max_jobs_per_scan": self.config.matching.max_ai_jobs_per_scan,
+                    "token_usage": ai_usage,
+                    "estimated_cost_usd": round(estimated_ai_cost, 8) if estimated_ai_cost is not None else None,
+                    "cost_estimate_configured": input_rate is not None and output_rate is not None,
                 },
                 "match_threshold_for_notifications": self.config.matching.threshold,
                 "notifications": {
