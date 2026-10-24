@@ -110,7 +110,7 @@ class WorkdayAdapter(JobSource):
                     source_id = str(item.get("jobReqId") or item.get("jobRequisitionId") or path).strip()
                     detail_url = f"https://{host}/wday/cxs/{tenant}/{site}{path}"
                     description = ""
-                    posted_at = None
+                    posted_at = self._parse_posted_at(item.get("postedOn"))
                     employment_type = None
                     try:
                         if details_fetched >= self.detail_limit:
@@ -123,9 +123,11 @@ class WorkdayAdapter(JobSource):
                         if isinstance(info, dict):
                             source_id = str(info.get("jobReqId") or info.get("jobRequisitionId") or source_id)
                             description = self._plain_text(info.get("jobDescription"))
-                            posted_at = self._parse_posted_at(info.get("postedOn"))
-                            if posted_at is None:
-                                posted_at = self._parse_posted_at(info.get("startDate"))
+                            detail_posted_at = self._parse_posted_at(info.get("postedOn"))
+                            if detail_posted_at is None:
+                                detail_posted_at = self._parse_posted_at(info.get("startDate"))
+                            if detail_posted_at is not None:
+                                posted_at = detail_posted_at
                             employment_type = info.get("timeType")
                             locations = [info.get("location", "")]
                             for extra in info.get("additionalLocations") or []:
