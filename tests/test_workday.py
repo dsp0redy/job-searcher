@@ -11,7 +11,7 @@ from job_searcher.adapters.workday import WorkdayAdapter
         ("https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
          ("nvidia.wd5.myworkdayjobs.com", "nvidia", "NVIDIAExternalCareerSite")),
         ("https://nvidia.wd5.myworkdayjobs.com/en-US/AnotherCareerSite",
-         ("nvidia.wd5.myworkdayjobs.com", "nvidia", "NVIDIAExternalCareerSite")),
+         ("nvidia.wd5.myworkdayjobs.com", "nvidia", "AnotherCareerSite")),
     ],
 )
 def test_parse_career_url(url: str, expected: tuple[str, str, str]) -> None:
@@ -114,7 +114,7 @@ def test_fetch_records_failed_site_status(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(adapter.client, "post", fail_request)
     try:
         assert adapter.fetch() == []
-        assert adapter.site_status["nvidia"] == "failed: no successful job-search response"
+        assert adapter.site_status["nvidia/NVIDIAExternalCareerSite"] == "failed: no successful job-search response"
     finally:
         adapter.close()
 
@@ -205,7 +205,7 @@ def test_fetch_skips_invalid_url_and_empty_or_malformed_listings(monkeypatch: py
     try:
         assert adapter.fetch() == []
         assert adapter.site_status["not a url"].startswith("failed: invalid URL")
-        assert adapter.site_status["nvidia"] == "ok: 0 postings"
+        assert adapter.site_status["nvidia/NVIDIAExternalCareerSite"] == "ok: 0 postings"
         assert calls == [0]
     finally:
         adapter.close()
@@ -231,7 +231,7 @@ def test_fetch_skips_invalid_rows_and_deduplicates_paths(monkeypatch: pytest.Mon
         adapter.close()
     assert len(jobs) == 1
     assert jobs[0].source_id == "/job/Engineer_REQ-1"
-    assert adapter.site_status["nvidia"] == "ok: 1 postings"
+    assert adapter.site_status["nvidia/NVIDIAExternalCareerSite"] == "ok: 1 postings"
 
 
 def test_fetch_falls_back_to_listing_fields_when_detail_request_fails(monkeypatch: pytest.MonkeyPatch) -> None:
