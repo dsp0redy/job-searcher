@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -58,7 +59,7 @@ class GitHubIssuePublisher:
                 if "pull_request" in issue:
                     continue
                 body = str(issue.get("body") or "")
-                match = __import__("re").search(r"<!-- job-searcher:([a-f0-9]{64}) -->", body)
+                match = re.search(r"<!-- job-searcher:([a-f0-9]{64}) -->", body)
                 if match:
                     self._existing[match.group(1)] = issue
             if len(issues) < 100:
