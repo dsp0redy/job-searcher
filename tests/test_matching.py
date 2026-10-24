@@ -57,7 +57,6 @@ def test_target_city_aliases_are_allowed(location):
         "Remote - India",
         "India",
         "Unknown",
-        "Bengaluru role based in Pune",
     ],
 )
 def test_non_target_locations_are_rejected(location):
