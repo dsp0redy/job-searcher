@@ -42,7 +42,7 @@ class AIResumeMatcher:
         }
         env_name = env_names[self.provider]
         self.api_key = os.getenv(env_name, "").strip() if env_name else ""
-        if self.provider in {"gemini", "claude"} and not self.api_key:
+        if not self.api_key:
             raise ValueError(f"matching.provider is '{self.provider}' but {env_name} is not set")
         self.base_url = os.getenv("AI_BASE_URL", "").strip().rstrip("/")
         if self.provider == "openai_compatible" and not self.base_url:
