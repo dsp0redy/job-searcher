@@ -71,7 +71,6 @@ class AIResumeMatcher:
                 self.resume_text = path.read_text(encoding="utf-8").strip()
         if not self.resume_text:
             raise ValueError("AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions")
-        self.client = httpx.Client(timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)), headers={"User-Agent": "job-searcher/0.1"})
         model_env = {
             "gemini": ("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             "claude": ("CLAUDE_MODEL", "claude-haiku-5-5"),
@@ -81,6 +80,10 @@ class AIResumeMatcher:
         self.model = os.getenv(model_env_name, default_model).strip() or default_model
         if self.provider == "openai_compatible" and not self.model:
             raise ValueError("AI_MODEL must be set for the openai_compatible provider")
+        self.client = httpx.Client(
+            timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)),
+            headers={"User-Agent": "job-searcher/0.1"},
+        )
 
     def close(self) -> None:
         self.client.close()
