@@ -39,9 +39,9 @@ class AIResumeMatcher:
             raise ValueError("AI matching is enabled but RESUME_TEXT is empty; store resume text in a GitHub Secret")
         self.client = httpx.Client(timeout=timeout, headers={"User-Agent": "job-searcher/0.1"})
         self.model = (
-            os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+            os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
             if self.provider == "gemini"
-            else os.getenv("CLAUDE_MODEL", "claude-3-5-haiku-latest").strip()
+            else os.getenv("CLAUDE_MODEL", "claude-haiku-5-5").strip()
         )
 
     def close(self) -> None:
@@ -122,7 +122,10 @@ class AIResumeMatcher:
             for item in raw_matches:
                 if not isinstance(item, dict):
                     continue
-                result = MatchResult.model_validate(item)
+                try:
+                    result = MatchResult.model_validate(item)
+                except ValidationError:
+                    continue
                 if result.job_id not in valid_ids or result.job_id in results:
                     continue
                 results[result.job_id] = result
