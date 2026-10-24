@@ -1,6 +1,6 @@
 profile:
   titles: ["Software Engineer", "C++ Engineer", "Linux Systems Engineer", "Embedded Software Engineer", "Firmware Engineer", "Systems Software Engineer"]
-  locations: ["Bengaluru", "Bangalore", "Remote", "India", "Hyderabad"]
+  locations: ["Bengaluru", "Bangalore", "Hyderabad"]
   minimum_experience_years: 2
   maximum_experience_years: 5
   skills: ["C++", "Linux", "C", "Python", "Docker", "Podman", "gRPC", "embedded", "firmware"]
