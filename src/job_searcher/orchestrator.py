@@ -61,9 +61,9 @@ class SearchOrchestrator:
                         )
                         for site, site_result in site_status.items():
                             source_status[f"workday:{site}"] = site_result
-                    elif adapter.name == "greenhouse" and not adapter.board_tokens:
+                    elif adapter.name == "greenhouse" and not getattr(adapter, "board_tokens", []):
                         source_status[adapter.name] = "skipped: no Greenhouse boards configured"
-                    elif adapter.name == "lever" and not adapter.site_slugs:
+                    elif adapter.name == "lever" and not getattr(adapter, "site_slugs", []):
                         source_status[adapter.name] = "skipped: no Lever sites configured"
                     else:
                         source_status[adapter.name] = f"ok: {len(found)} postings"
@@ -120,11 +120,13 @@ class SearchOrchestrator:
                     results = ai_matcher.match_batch(batch)
                     ai_results.update(results)
                     for job in batch:
-                        result = results.get(job.identity)
-                        if result is None:
+                        batch_result = results.get(job.identity)
+                        if batch_result is None:
                             ai_failed.add(job.identity)
                         else:
-                            self.store.save_match(ai_matcher.cache_key(job), provider, result.model_dump())
+                            self.store.save_match(
+                                ai_matcher.cache_key(job), provider, batch_result.model_dump()
+                            )
 
             notify_enabled = self.config.notifications.github_issues
             token = self.config.github_token()
@@ -188,7 +190,7 @@ class SearchOrchestrator:
                     if publisher is None:
                         row["notification"] = "not_configured"
                     else:
-                        result = publisher.publish(
+                        publish_result = publisher.publish(
                             job,
                             score,
                             reason,
@@ -196,12 +198,12 @@ class SearchOrchestrator:
                             missing_skills=missing_skills,
                             improvements=improvements,
                         )
-                        row["notification"] = result["status"]
+                        row["notification"] = publish_result["status"]
                         notification_results.append({
                             "company": job.company,
                             "title": job.title,
                             "score": score,
-                            **result,
+                            **publish_result,
                         })
                 elif notify_enabled and provider != "none" and ai_status in {"failed", "deferred"}:
                     row["notification"] = f"ai_{ai_status}"
