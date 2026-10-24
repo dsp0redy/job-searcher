@@ -1,0 +1,25 @@
+profile:
+  titles: ["Software Engineer", "C++ Engineer", "Linux Systems Engineer", "Embedded Software Engineer"]
+  locations: ["Bengaluru", "Remote", "India"]
+  minimum_experience_years: 2
+  maximum_experience_years: 5
+  skills: ["C++", "Linux", "C", "Python", "Docker", "gRPC"]
+search:
+  max_pages_per_source: 5
+  request_timeout_seconds: 20
+  max_concurrency: 4
+  posted_within_days: 14
+  minimum_local_score: 2
+storage:
+  path: "data/jobs.sqlite3"
+matching:
+  provider: "none"
+  threshold: 65
+  max_jobs_per_ai_batch: 8
+sources:
+  greenhouse: []
+  lever: []
+  workday: []
+notifications:
+  github_issues: false
+  repository: ""
