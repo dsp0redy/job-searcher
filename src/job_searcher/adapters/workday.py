@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from html import unescape
 from urllib.parse import urlparse
 
@@ -15,6 +16,7 @@ from ..models import Job
 
 LOG = logging.getLogger(__name__)
 _LOCALE = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+_RELATIVE_POSTED = re.compile(r"(today|yesterday|(?:posted\s*)?(\d+)\+?\s*days?\s*ago)", re.I)
 
 
 class WorkdayAdapter(JobSource):
@@ -44,6 +46,24 @@ class WorkdayAdapter(JobSource):
     def _plain_text(value: object) -> str:
         text = re.sub(r"<[^>]+>", " ", str(value or ""))
         return re.sub(r"\s+", " ", unescape(text)).strip()
+
+    @staticmethod
+    def _parse_posted_at(value: object) -> datetime | None:
+        """Parse ISO dates and Workday's relative labels; leave unknown dates unset."""
+        if not value:
+            return None
+        text = str(value).strip()
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+        except ValueError:
+            pass
+        match = _RELATIVE_POSTED.search(text)
+        if not match:
+            return None
+        lowered = match.group(1).casefold()
+        days = 0 if lowered == "today" else 1 if lowered == "yesterday" else int(match.group(2))
+        return datetime.now(timezone.utc) - timedelta(days=days)
 
     def fetch(self) -> list[Job]:
         jobs: list[Job] = []
@@ -98,7 +118,9 @@ class WorkdayAdapter(JobSource):
                         if isinstance(info, dict):
                             source_id = str(info.get("jobReqId") or info.get("jobRequisitionId") or source_id)
                             description = self._plain_text(info.get("jobDescription"))
-                            posted_at = info.get("postedOn") or info.get("startDate")
+                            posted_at = self._parse_posted_at(info.get("postedOn"))
+                            if posted_at is None:
+                                posted_at = self._parse_posted_at(info.get("startDate"))
                             employment_type = info.get("timeType")
                             locations = [info.get("location", "")]
                             for extra in info.get("additionalLocations") or []:
