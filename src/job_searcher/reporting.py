@@ -6,6 +6,13 @@ from pathlib import Path
 from typing import Any
 
 
+def _safe_csv_cell(value: object) -> object:
+    """Prevent spreadsheet formula execution when CSV reports are opened interactively."""
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def write_reports(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> tuple[Path, Path, Path]:
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -18,7 +25,8 @@ def write_reports(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> t
         writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
-            writer.writerow({**row, "skill_hits": ", ".join(row.get("skill_hits", []))})
+            csv_row = {**row, "skill_hits": ", ".join(row.get("skill_hits", []))}
+            writer.writerow({key: _safe_csv_cell(value) for key, value in csv_row.items()})
     lines = [f"# Job Search Report — run {run_id}", "", f"Candidates: {len(rows)}", ""]
     for row in sorted(rows, key=lambda r: int(r.get("score", 0)), reverse=True):
         lines.extend([f"## {row.get('title', 'Untitled')} — {row.get('company', '')}",
