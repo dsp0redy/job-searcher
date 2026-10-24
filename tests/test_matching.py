@@ -1,3 +1,5 @@
+import pytest
+
 from job_searcher.config import ProfileConfig
 from job_searcher.matching import (extract_experience_range, is_allowed_location, is_experience_compatible, score_job)
 from job_searcher.models import Job
@@ -28,9 +30,6 @@ def test_cache_key_changes_with_provider_and_profile():
     assert cache_key(job, profile) != cache_key(job, ProfileConfig(skills=["Linux"]))
 
 
-
-
-import pytest
 
 
 @pytest.mark.parametrize(
