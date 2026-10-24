@@ -6,6 +6,9 @@ import sys
 import pytest
 
 import job_searcher.cli as cli
+from job_searcher.config import AppConfig, StorageConfig
+from job_searcher.models import Job
+from job_searcher.storage import JobStore
 
 
 class FakeConfig:
@@ -101,4 +104,60 @@ def test_cli_resume_preview_reports_missing_resume(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["job-searcher", "--preview-resume"])
     monkeypatch.setattr(cli.AppConfig, "load", lambda path: FakeConfig())
     with pytest.raises(SystemExit, match="RESUME_TEXT or RESUME_FILE"):
+        cli.main()
+
+
+
+def test_cli_database_backup_and_prune_commands(monkeypatch, tmp_path, capsys):
+    database = tmp_path / "jobs.sqlite3"
+    config = AppConfig(storage=StorageConfig(path=str(database)))
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: config)
+    backup = tmp_path / "backup.sqlite3"
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--backup-db", str(backup)])
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["backup"] == str(backup)
+    assert backup.exists()
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--prune-now"])
+    cli.main()
+    assert "retention" in json.loads(capsys.readouterr().out)
+
+
+def test_cli_can_set_and_show_local_review_status(monkeypatch, tmp_path, capsys):
+    database = tmp_path / "jobs.sqlite3"
+    config = AppConfig(storage=StorageConfig(path=str(database)))
+    job = Job(source="lever", source_id="cli-review", company="Acme", title="Engineer",
+              url="https://example.com/cli-review")
+    JobStore(str(database)).upsert_jobs([job])
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: config)
+    monkeypatch.setattr(sys, "argv", [
+        "job-searcher", "--job-identity", job.identity, "--review-status", "saved",
+        "--review-notes", "Check requirements",
+    ])
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["status"] == "saved"
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--job-identity", job.identity])
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["notes"] == "Check requirements"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["job-searcher", "--review-status", "saved"],
+        ["job-searcher", "--job-identity", "id", "--review-notes", "notes"],
+        ["job-searcher", "--review-notes", "notes"],
+    ],
+)
+def test_cli_rejects_incomplete_review_arguments(monkeypatch, argv):
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: AppConfig())
+    with pytest.raises(SystemExit):
+        cli.main()
+
+
+def test_cli_review_status_without_existing_review_fails(monkeypatch, tmp_path):
+    config = AppConfig(storage=StorageConfig(path=str(tmp_path / "jobs.sqlite3")))
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: config)
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--job-identity", "unknown"])
+    with pytest.raises(SystemExit, match="No review status found"):
         cli.main()
