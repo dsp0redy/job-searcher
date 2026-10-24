@@ -94,6 +94,7 @@ def test_profile_rejects_invalid_experience(kwargs):
     {"request_timeout_seconds": 0},
     {"max_concurrency": 21},
     {"posted_within_days": -1},
+    {"report_retention_days": 0},
     {"minimum_local_score": 101},
 ])
 def test_search_config_rejects_out_of_range_values(kwargs):
