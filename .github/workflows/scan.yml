@@ -77,7 +77,7 @@ jobs:
           key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload reports (including on failure)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: job-search-reports-${{ github.run_id }}
           path: reports/
