@@ -10,6 +10,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from urllib.parse import urlparse
+from typing import cast
+
+from pydantic import HttpUrl
 
 from .base import JobSource
 from ..models import Job
@@ -156,7 +159,7 @@ class WorkdayAdapter(JobSource):
                         company=company[:200],
                         title=title[:300],
                         location=location[:300] or "Unknown",
-                        url=f"https://{host}{path}",
+                        url=cast(HttpUrl, f"https://{host}{path}"),
                         description=description[:100_000],
                         posted_at=posted_at,
                         employment_type=str(employment_type) if employment_type else None,
