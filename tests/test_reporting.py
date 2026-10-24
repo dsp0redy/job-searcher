@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 
-from job_searcher.reporting import _safe_csv_cell, write_reports
+from job_searcher.reporting import _safe_csv_cell, write_digest, write_reports
 
 
 def test_safe_csv_cell_escapes_formula_prefixes_and_preserves_safe_values():
@@ -58,5 +58,30 @@ def test_empty_report_is_valid(tmp_path):
     json_path, csv_path, md_path = write_reports(str(tmp_path), 2, [])
     assert json.loads(json_path.read_text(encoding="utf-8")) == []
     with csv_path.open(encoding="utf-8-sig", newline="") as stream:
-        assert list(csv.reader(stream)) == [["source", "company", "title", "location", "url", "score", "reason", "skill_hits"]]
+        assert list(csv.reader(stream)) == [["identity", "source", "company", "title", "location", "url", "score", "reason", "skill_hits"]]
     assert "Candidates: 0" in md_path.read_text(encoding="utf-8")
+
+
+
+def test_digest_groups_by_employer_and_ranks_matches(tmp_path):
+    rows = [
+        {"company": "Beta", "title": "Firmware Engineer", "location": "Hyderabad",
+         "url": "https://example.com/beta", "score": 70, "reason": "Embedded C++"},
+        {"company": "Acme", "title": "Systems Engineer", "location": "Bengaluru",
+         "url": "https://example.com/acme-low", "score": 60, "reason": "Linux"},
+        {"company": "Acme", "title": "Senior C++ Engineer", "location": "Bengaluru",
+         "url": "https://example.com/acme-high", "score": 90, "reason": "C++ and Linux"},
+    ]
+    path = write_digest(str(tmp_path), 11, rows)
+    text = path.read_text(encoding="utf-8")
+    assert "Matching postings: 3" in text
+    assert text.index("## Acme") < text.index("## Beta")
+    assert text.index("Senior C++ Engineer") < text.index("Systems Engineer")
+    assert "https://example.com/acme-high" in text
+
+
+def test_digest_handles_no_matches(tmp_path):
+    path = write_digest(str(tmp_path), 12, [])
+    text = path.read_text(encoding="utf-8")
+    assert "Matching postings: 0" in text
+    assert "No postings passed" in text
