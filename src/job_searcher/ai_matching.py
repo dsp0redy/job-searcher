@@ -149,6 +149,6 @@ class AIResumeMatcher:
                     continue
                 results[result.job_id] = result
             return results
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, ValidationError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError, ValidationError) as exc:
             LOG.warning("AI matching batch failed (%s)", type(exc).__name__)
             return {}
