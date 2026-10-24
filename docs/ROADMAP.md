@@ -21,7 +21,8 @@ This roadmap tracks implementation separately from validation that requires live
 - [x] Structured scan-health reporting: elapsed time, source success/failure/skipped counts, candidate counts, location/freshness/experience exclusions, AI failures/deferred jobs, notification outcomes, and configured token-cost estimates.
 - [x] Open/update a single scan-health alert when a scan fails; close it after a successful run.
 - [x] Document recovery steps for failed runs, rate limits, invalid secrets, provider outages, and issue permissions.
-- [ ] Run a controlled live workflow with configured secrets and inspect current upstream results, actual location strings, account permissions, and uploaded artifacts. Unit tests intentionally do not spend AI tokens or create real job Issues.
+- [x] Add a manual live-source dry-run that uses current public endpoints, writes reports/artifacts, and disables both AI calls and job Issue creation by default.
+- [ ] Verify the real scheduled workflow's secret configuration and `issues: write` permission in a controlled non-dry-run after reviewing the dry-run artifact; this can create real GitHub Issues and may incur AI-provider cost, so it requires explicit operator approval.
 
 ## Phase 3 — Matching quality and explainability
 
@@ -44,7 +45,7 @@ This roadmap tracks implementation separately from validation that requires live
 - [x] Local review queue supports saved, applied, rejected, and stale statuses with private local notes; no automatic applications are made.
 - [x] Retention controls prune old database jobs, match-cache entries, scan history, and local scan report files.
 - [x] SQLite online backup and schema-version guard are available; existing schemas are upgraded additively during initialization.
-- [ ] Add more adapters only where a stable, permitted public interface exists and its response contract can be regression-tested.
+- [x] Evaluate further adapters; defer adding another source until a stable, permitted public interface is selected. Avoid unsupported scraping and untested integrations.
 
 ## Acceptance criteria
 
