@@ -114,3 +114,16 @@ def test_experience_compatibility_rejects_roles_outside_configured_range():
     assert is_experience_compatible(3, 4, profile)
     assert is_experience_compatible(None, None, profile)
     assert is_experience_compatible(8, None, ProfileConfig())
+
+
+
+def test_reviewed_location_regression_fixture():
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "location_regression.json"
+    cases = json.loads(fixture.read_text(encoding="utf-8"))
+    profile = ProfileConfig(locations=["Bengaluru", "Bangalore", "Hyderabad"])
+    assert cases
+    for case in cases:
+        assert is_allowed_location(case["location"], profile) is case["allowed"], case["location"]
