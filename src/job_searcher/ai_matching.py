@@ -78,7 +78,7 @@ class AIResumeMatcher:
             "openai_compatible": ("AI_MODEL", ""),
         }
         model_env_name, default_model = model_env[self.provider]
-        self.model = os.getenv(model_env_name, default_model).strip()
+        self.model = os.getenv(model_env_name, default_model).strip() or default_model
         if self.provider == "openai_compatible" and not self.model:
             raise ValueError("AI_MODEL must be set for the openai_compatible provider")
 
