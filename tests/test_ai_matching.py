@@ -58,6 +58,7 @@ def test_matcher_uses_batch_response_and_ignores_unknown_ids(monkeypatch: pytest
 def test_ai_provider_requires_secret_and_resume(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("RESUME_TEXT", raising=False)
+    monkeypatch.delenv("RESUME_FILE", raising=False)
     with pytest.raises(ValueError, match="GEMINI_API_KEY"):
         AIResumeMatcher("gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
