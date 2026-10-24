@@ -20,7 +20,7 @@ Source failures are logged independently. This is not a universal job crawler an
 
 ## Matching and filtering
 
-Local matching scores configured title matches, location matches, and skills found in the job title/description. The checked-in configuration defaults to Gemini AI matching, which compares a resume against selected jobs. Add `GEMINI_API_KEY` and plain-text resume content as `RESUME_TEXT` in GitHub Actions Secrets. To use Claude instead, set `matching.provider: claude` and add `ANTHROPIC_API_KEY`; for local-only scoring set `matching.provider: none`. A score is a relevance estimate, not an interview probability.
+Local matching scores configured title matches, location matches, and skills found in the job title/description. The checked-in configuration defaults to Gemini AI matching, which compares a resume against selected jobs. Add `GEMINI_API_KEY` and plain-text resume content as `RESUME_TEXT` in GitHub Actions Secrets. For local runs, `RESUME_FILE` may point to an ignored PDF or text file instead. To use Claude instead, set `matching.provider: claude` and add `ANTHROPIC_API_KEY`; for local-only scoring set `matching.provider: none`. A score is a relevance estimate, not an interview probability.
 
 AI calls are bounded by `matching.max_ai_jobs_per_scan` (40 by default) and grouped using `matching.max_jobs_per_ai_batch` (8 by default). Successful results are cached in SQLite using a key that includes the resume text, job content, provider, and model. Missing or invalid results are not cached as successful matches, so they can be retried later.
 
@@ -39,6 +39,7 @@ Each created issue contains a stable hidden identity marker. Later runs scan exi
 ## Privacy
 
 - Do not commit API tokens, `.env`, resumes, or personal generated reports.
+- For scheduled AI matching, store the resume's extracted text in the `RESUME_TEXT` Actions Secret; do not commit the PDF to a public repository.
 - In AI mode, the resume text and selected job-description excerpts are sent to the chosen provider. Review the provider's privacy and retention terms before enabling it.
 - `data/jobs.sqlite3` stores job descriptions and scan state; `reports/` may contain job/profile matching evidence.
 - Workflow report artifacts are available to repository users with appropriate access until they expire.
