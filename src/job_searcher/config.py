@@ -27,6 +27,7 @@ class SearchConfig(BaseModel):
     request_timeout_seconds: float = Field(default=20, gt=0, le=120)
     max_concurrency: int = Field(default=4, ge=1, le=20)
     posted_within_days: int = Field(default=14, ge=0, le=3650)
+    report_retention_days: int = Field(default=30, ge=1, le=3650)
     minimum_local_score: int = Field(default=2, ge=0, le=100)
 
 
