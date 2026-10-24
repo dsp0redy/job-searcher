@@ -1,11 +1,11 @@
 profile:
-  titles: ["Software Engineer", "C++ Engineer", "Linux Systems Engineer", "Embedded Software Engineer"]
-  locations: ["Bengaluru", "Remote", "India"]
+  titles: ["Software Engineer", "C++ Engineer", "Linux Systems Engineer", "Embedded Software Engineer", "Firmware Engineer", "Systems Software Engineer"]
+  locations: ["Bengaluru", "Bangalore", "Remote", "India", "Hyderabad"]
   minimum_experience_years: 2
   maximum_experience_years: 5
-  skills: ["C++", "Linux", "C", "Python", "Docker", "gRPC"]
+  skills: ["C++", "Linux", "C", "Python", "Docker", "Podman", "gRPC", "embedded", "firmware"]
 search:
-  max_pages_per_source: 5
+  max_pages_per_source: 2
   request_timeout_seconds: 20
   max_concurrency: 4
   posted_within_days: 14
@@ -19,7 +19,27 @@ matching:
 sources:
   greenhouse: []
   lever: []
-  workday: []
+  workday:
+    - "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
+    - "https://intel.wd1.myworkdayjobs.com/External"
+    - "https://amd.wd1.myworkdayjobs.com/External"
+    - "https://qualcomm.wd12.myworkdayjobs.com/External"
+    - "https://broadcom.wd1.myworkdayjobs.com/External_Career"
+    - "https://analogdevices.wd1.myworkdayjobs.com/External"
+    - "https://nxp.wd3.myworkdayjobs.com/careers"
+    - "https://wdc.wd1.myworkdayjobs.com/WD"
+    - "https://dell.wd1.myworkdayjobs.com/External"
+    - "https://hp.wd5.myworkdayjobs.com/ExternalCareerSite"
+    - "https://cisco.wd5.myworkdayjobs.com/Cisco_Careers"
+    - "https://adobe.wd5.myworkdayjobs.com/external_experienced"
+    - "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site"
+    - "https://autodesk.wd1.myworkdayjobs.com/Ext"
+    - "https://redhat.wd5.myworkdayjobs.com/Jobs"
+    - "https://snowflake.wd1.myworkdayjobs.com/Snowflake"
+    - "https://zoom.wd5.myworkdayjobs.com/Zoom"
+    - "https://thomsonreuters.wd5.myworkdayjobs.com/External_Career_Site"
+    - "https://motorolasolutions.wd5.myworkdayjobs.com/Careers"
+    - "https://honeywell.wd5.myworkdayjobs.com/Honeywell"
 notifications:
-  github_issues: false
+  github_issues: true
   repository: ""
