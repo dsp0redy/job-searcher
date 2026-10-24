@@ -29,10 +29,16 @@ class SearchOrchestrator:
         timeout = self.config.search.request_timeout_seconds
         ai_matcher: AIResumeMatcher | None = None
         publisher: GitHubIssuePublisher | None = None
+        ai_initialization_failed = False
         try:
             provider = self.config.matching.provider.casefold()
             if provider != "none":
-                ai_matcher = AIResumeMatcher(provider, timeout)
+                try:
+                    ai_matcher = AIResumeMatcher(provider, timeout)
+                except Exception as exc:
+                    # AI is optional: continue discovering/reporting jobs with local scoring.
+                    ai_initialization_failed = True
+                    LOG.error("AI matcher initialization failed (%s); continuing with local scoring", type(exc).__name__)
 
             adapters = [
                 GreenhouseAdapter(self.config.sources.greenhouse, timeout),
@@ -78,7 +84,9 @@ class SearchOrchestrator:
                     candidates.append((job, local_match))
 
             ai_results: dict[str, MatchResult] = {}
-            ai_failed: set[str] = set()
+            ai_failed: set[str] = (
+                {job.identity for job, _ in candidates} if ai_initialization_failed else set()
+            )
             ai_deferred: set[str] = set()
             ai_cached = 0
             if ai_matcher is not None:
@@ -133,7 +141,7 @@ class SearchOrchestrator:
                     matched_skills = list(local_match["skill_hits"])
                     missing_skills: list[str] = []
                     improvements: list[str] = []
-                    ai_status = "disabled"
+                    ai_status = "failed" if provider != "none" else "disabled"
                 elif ai_result is not None:
                     score = ai_result.score
                     reason = ai_result.reason
@@ -170,7 +178,7 @@ class SearchOrchestrator:
                     "notification": "not_eligible",
                 }
 
-                ai_eligible = ai_matcher is None or ai_status == "matched"
+                ai_eligible = provider == "none" or ai_status == "matched"
                 if notify_enabled and ai_eligible and score >= self.config.matching.threshold:
                     if publisher is None:
                         row["notification"] = "not_configured"
@@ -190,7 +198,7 @@ class SearchOrchestrator:
                             "score": score,
                             **result,
                         })
-                elif notify_enabled and ai_matcher is not None and ai_status in {"failed", "deferred"}:
+                elif notify_enabled and provider != "none" and ai_status in {"failed", "deferred"}:
                     row["notification"] = f"ai_{ai_status}"
 
                 rows.append(row)
@@ -202,9 +210,14 @@ class SearchOrchestrator:
                 "postings_fetched": len(all_jobs),
                 "new_identities": inserted,
                 "qualified_candidates": len(rows),
-                "matching": provider if ai_matcher else "deterministic local scoring",
+                "matching": provider if ai_matcher else (
+                    "deterministic local scoring (AI unavailable)" if provider != "none"
+                    else "deterministic local scoring"
+                ),
                 "ai": {
                     "enabled": ai_matcher is not None,
+                    "requested": provider != "none",
+                    "initialization_failed": ai_initialization_failed,
                     "scored": len(ai_results) - ai_cached,
                     "matched_including_cache": len(ai_results),
                     "cached": ai_cached,
