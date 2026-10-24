@@ -1,0 +1,13 @@
+{
+  "jobs": [
+    {
+      "id": 123,
+      "title": "C++ Engineer",
+      "absolute_url": "https://jobs.example.com/123",
+      "location": {
+        "name": "Bengaluru, India"
+      },
+      "content": "C++ Linux systems"
+    }
+  ]
+}
