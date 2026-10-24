@@ -470,3 +470,31 @@ def test_all_failed_greenhouse_sites_do_not_count_as_success(tmp_path, monkeypat
     assert summary["sources"]["greenhouse:broken"] == "failed: ValueError"
     assert summary["source_health"]["successful"] == 0
     assert summary["run_status"] == "no_sources_succeeded"
+
+
+
+def test_explicit_experience_fields_skip_text_extraction(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"experience_min": 3.0, "experience_max": 5.0})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_experience"] == 0
+    import json
+    from pathlib import Path
+    rows = json.loads(Path(summary["reports"][0]).read_text(encoding="utf-8"))
+    assert rows[0]["experience_requirement"] == {"minimum_years": 3.0, "maximum_years": 5.0}
+
+
+def test_invalid_ai_token_usage_values_are_ignored(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [make_job()])
+
+    class Matcher:
+        last_usage = {"input_tokens": "bad", "output_tokens": -1, "total_tokens": True}
+        def __init__(self, provider, timeout): pass
+        def cache_key(self, job): return "invalid-usage-" + job.identity
+        def match_batch(self, batch):
+            return {job.identity: MatchResult(job_id=job.identity, score=80, reason="evidence") for job in batch}
+        def close(self): pass
+
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", Matcher)
+    summary = SearchOrchestrator(make_config(tmp_path, provider="gemini")).run(str(tmp_path / "reports"))
+    assert summary["ai"]["token_usage"] == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
