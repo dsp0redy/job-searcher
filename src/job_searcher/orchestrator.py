@@ -45,7 +45,18 @@ class SearchOrchestrator:
                 try:
                     found = adapter.fetch()
                     all_jobs.extend(found)
-                    source_status[adapter.name] = f"ok: {len(found)} postings"
+                    if adapter.name == "workday":
+                        site_status = getattr(adapter, "site_status", {})
+                        successful_sites = sum(value.startswith("ok:") for value in site_status.values())
+                        source_status[adapter.name] = (
+                            f"ok: {len(found)} postings; {successful_sites}/{len(site_status)} sites responded"
+                            if successful_sites
+                            else f"failed: 0/{len(site_status)} Workday sites responded"
+                        )
+                        for site, site_result in site_status.items():
+                            source_status[f"workday:{site}"] = site_result
+                    else:
+                        source_status[adapter.name] = f"ok: {len(found)} postings"
                 except Exception as exc:
                     source_status[adapter.name] = f"failed: {type(exc).__name__}"
                     LOG.exception("Source %s failed; continuing other sources", adapter.name)
