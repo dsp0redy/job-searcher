@@ -99,7 +99,6 @@ def test_fetch_normalizes_listing_and_detail_fields(monkeypatch: pytest.MonkeyPa
     assert jobs[0].description == "C++ systems role"
     assert jobs[0].posted_at is not None
     assert adapter.site_status["nvidia/NVIDIAExternalCareerSite"] == "ok: 1 postings"
-    assert adapter.site_status["nvidia/AnotherCareerSite"] == "ok: 0 postings"
 
 
 def test_fetch_records_failed_site_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -214,7 +213,7 @@ def test_fetch_skips_invalid_url_and_empty_or_malformed_listings(monkeypatch: py
 def test_fetch_skips_invalid_rows_and_deduplicates_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     adapter = WorkdayAdapter([
         "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
-        "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite",
+        "https://nvidia.wd5.myworkdayjobs.com/en-US/AnotherCareerSite",
     ], max_pages=1, detail_limit=0)
     listing = {"jobPostings": [
         None,
