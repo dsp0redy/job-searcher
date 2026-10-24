@@ -4,7 +4,7 @@ import json
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from .models import Job
 
 LOG = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ class JobStore:
     def start_run(self) -> int:
         with self._connect() as db:
             cursor = db.execute("INSERT INTO scan_runs(status) VALUES('running')")
-            return int(cursor.lastrowid)
+            return cast(int, cursor.lastrowid)
 
     def finish_run(self, run_id: int, status: str, summary: dict[str, Any]) -> None:
         with self._connect() as db:
