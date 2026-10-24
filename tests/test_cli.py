@@ -176,3 +176,27 @@ def test_cli_notification_failure_exits_nonzero_after_report(monkeypatch, capsys
     with pytest.raises(SystemExit, match="notification delivery needs attention"):
         cli.main()
     assert json.loads(capsys.readouterr().out) == summary
+
+
+def test_cli_dry_run_disables_ai_and_issue_creation(monkeypatch, tmp_path, capsys):
+    from job_searcher.config import MatchingConfig, NotificationConfig
+
+    config = AppConfig(
+        matching=MatchingConfig(provider="gemini"),
+        notifications=NotificationConfig(github_issues=True, repository="owner/repo"),
+        storage=StorageConfig(path=str(tmp_path / "dry-run.sqlite3")),
+    )
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: config)
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--dry-run"])
+
+    class FakeOrchestrator:
+        def __init__(self, supplied_config):
+            assert supplied_config.matching.provider == "none"
+            assert supplied_config.notifications.github_issues is False
+
+        def run(self, output_dir):
+            return {"run_status": "success", "qualified_candidates": 0}
+
+    monkeypatch.setattr(cli, "SearchOrchestrator", FakeOrchestrator)
+    cli.main()
+    assert json.loads(capsys.readouterr().out)["run_status"] == "success"
