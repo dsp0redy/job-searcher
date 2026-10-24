@@ -33,6 +33,7 @@ class SearchOrchestrator:
         publisher: GitHubIssuePublisher | None = None
         ai_initialization_failed = False
         try:
+            retention_summary = self.store.prune_old_data(self.config.storage.retention_days)
             provider = self.config.matching.provider.casefold()
             if provider != "none":
                 try:
@@ -249,6 +250,7 @@ class SearchOrchestrator:
             )
             summary = {
                 "run_id": run_id,
+                "retention": retention_summary,
                 "sources": source_status,
                 "postings_fetched": fetched_count,
                 "new_identities": inserted,
