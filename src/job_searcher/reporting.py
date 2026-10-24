@@ -39,3 +39,30 @@ def write_reports(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> t
                       f"- **Apply:** {row.get('url', '')}", ""])
     md_path.write_text("\n".join(lines), encoding="utf-8")
     return json_path, csv_path, md_path
+
+
+
+def write_digest(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> Path:
+    """Write a compact employer-grouped digest for easy weekly review and sharing."""
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    digest_path = root / f"scan-{run_id}-digest.md"
+    lines = [f"# Job Discovery Digest — scan {run_id}", "", f"Matching postings: {len(rows)}", ""]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        company = str(row.get("company") or "Unknown employer")
+        grouped.setdefault(company, []).append(row)
+    if not grouped:
+        lines.append("No postings passed the configured location, freshness, experience, and relevance filters.")
+    for company in sorted(grouped, key=str.casefold):
+        lines.extend([f"## {company}", ""])
+        for row in sorted(grouped[company], key=lambda item: int(item.get("score", 0)), reverse=True):
+            title = str(row.get("title") or "Untitled role").replace("[", "\\[").replace("]", "\\]")
+            url = str(row.get("url") or "")
+            location = str(row.get("location") or "Unknown")
+            score = int(row.get("score", 0))
+            reason = str(row.get("reason") or "No explanation supplied").replace("\\n", " ")
+            lines.append(f"- [{title}]({url}) — {location} — **{score}/100** — {reason}")
+        lines.append("")
+    digest_path.write_text("\\n".join(lines).rstrip() + "\\n", encoding="utf-8")
+    return digest_path
