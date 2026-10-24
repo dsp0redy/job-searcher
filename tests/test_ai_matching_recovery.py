@@ -94,6 +94,7 @@ def test_ai_matching_returns_recovered_matches_if_correction_fails(monkeypatch) 
     _configure(monkeypatch)
     matcher = AIResumeMatcher("gemini")
     job = _job("REQ-1")
+    missing_job = _job("REQ-2")
     calls = 0
 
     def fake_request(prompt: str) -> str:
@@ -111,9 +112,10 @@ def test_ai_matching_returns_recovered_matches_if_correction_fails(monkeypatch) 
 
     monkeypatch.setattr(matcher, "_request", fake_request)
     try:
-        results = matcher.match_batch([job])
+        results = matcher.match_batch([job, missing_job])
     finally:
         matcher.close()
 
-    assert calls == 1
+    assert calls == 2
+    assert list(results) == [job.identity]
     assert results[job.identity].score == 80
