@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -13,6 +14,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from .adapters.base import JobSource
 from .models import Job
 
 LOG = logging.getLogger(__name__)
@@ -113,24 +115,31 @@ class AIResumeMatcher:
         """Retry transient network, rate-limit, and server errors with bounded backoff."""
         max_attempts = 3
         for attempt in range(max_attempts):
+            JobSource._wait_for_host(url)
             try:
                 response = self.client.post(url, **kwargs)
                 response.raise_for_status()
                 return response
             except httpx.HTTPStatusError as exc:
-                retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
+                status = exc.response.status_code
+                retryable = status == 429 or 500 <= status <= 599
                 if not retryable or attempt == max_attempts - 1:
                     raise
+                delay = JobSource._retry_delay(exc.response, attempt)
                 LOG.warning(
                     "AI provider returned HTTP %d; retrying attempt %d/%d",
-                    exc.response.status_code, attempt + 2, max_attempts,
+                    status, attempt + 2, max_attempts,
                 )
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt == max_attempts - 1:
                     raise
-                LOG.warning("AI provider request had a transient network error; retrying attempt %d/%d", attempt + 2, max_attempts)
-            time.sleep(min(2 ** attempt, 8))
-
+                delay = float(min(2**attempt, 8))
+                LOG.warning(
+                    "AI provider request had a transient network error; retrying attempt %d/%d",
+                    attempt + 2, max_attempts,
+                )
+            jitter = random.uniform(0.0, min(JobSource.RETRY_JITTER_SECONDS, delay * 0.1))
+            time.sleep(min(delay + jitter, JobSource.MAX_RETRY_DELAY_SECONDS))
         raise RuntimeError("AI request retries exhausted")
 
     def _request(self, prompt: str) -> str:
