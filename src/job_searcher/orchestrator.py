@@ -65,17 +65,38 @@ class SearchOrchestrator:
             ai_results: dict[str, MatchResult] = {}
             ai_failed: set[str] = set()
             ai_deferred: set[str] = set()
+            ai_cached = 0
             if ai_matcher is not None:
                 ranked = sorted(candidates, key=lambda pair: int(pair[1]["score"]), reverse=True)
                 ai_limit = self.config.matching.max_ai_jobs_per_scan
                 selected = ranked[:ai_limit]
                 ai_deferred = {job.identity for job, _ in ranked[ai_limit:]}
+                uncached: list[Job] = []
+                for job, _ in selected:
+                    key = ai_matcher.cache_key(job)
+                    cached = self.store.get_match(key)
+                    if cached is not None:
+                        try:
+                            result = MatchResult.model_validate(cached)
+                            if result.job_id == job.identity:
+                                ai_results[job.identity] = result
+                                ai_cached += 1
+                                continue
+                        except Exception:
+                            LOG.info("Ignoring invalid cached AI result for %s", job.identity)
+                    uncached.append(job)
+
                 batch_size = self.config.matching.max_jobs_per_ai_batch
-                for offset in range(0, len(selected), batch_size):
-                    batch = [job for job, _ in selected[offset:offset + batch_size]]
+                for offset in range(0, len(uncached), batch_size):
+                    batch = uncached[offset:offset + batch_size]
                     results = ai_matcher.match_batch(batch)
                     ai_results.update(results)
-                    ai_failed.update(job.identity for job in batch if job.identity not in results)
+                    for job in batch:
+                        result = results.get(job.identity)
+                        if result is None:
+                            ai_failed.add(job.identity)
+                        else:
+                            self.store.save_match(ai_matcher.cache_key(job), provider, result.model_dump())
 
             notify_enabled = self.config.notifications.github_issues
             token = self.config.github_token()
@@ -163,6 +184,7 @@ class SearchOrchestrator:
                 "ai": {
                     "enabled": ai_matcher is not None,
                     "scored": len(ai_results),
+                    "cached": ai_cached,
                     "failed": len(ai_failed),
                     "deferred_by_scan_limit": len(ai_deferred),
                     "max_jobs_per_scan": self.config.matching.max_ai_jobs_per_scan,
