@@ -87,7 +87,7 @@ jobs:
             const existing = issues.find(issue => !issue.pull_request && (issue.body || '').includes(marker));
             const body = [
               marker,
-              'The scheduled job search failed or reported no successful sources.',
+              'The scheduled job search failed, no source succeeded, AI matching was incomplete, or GitHub notification delivery failed.',
               '',
               '- Workflow run: ' + context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId,
               '- Trigger: ' + context.eventName,
