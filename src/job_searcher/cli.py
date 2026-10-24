@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from .ai_matching import load_resume_text
 from .config import AppConfig
 from .orchestrator import SearchOrchestrator
@@ -32,7 +33,7 @@ def main() -> None:
         logging.info("Dry run enabled: AI matching and GitHub Issue creation are disabled")
     if args.preview_resume:
         try:
-            resume = load_resume_text()
+            resume = load_resume_text(os.getenv("RESUME_TEXT", ""), os.getenv("RESUME_FILE", ""))
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
         preview = {
