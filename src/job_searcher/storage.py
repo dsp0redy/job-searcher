@@ -1,10 +1,13 @@
 """SQLite persistence for jobs, match cache, and scan history."""
 from __future__ import annotations
 import json
+import logging
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from .models import Job
+
+LOG = logging.getLogger(__name__)
 
 
 class JobStore:
@@ -64,7 +67,14 @@ class JobStore:
     def get_match(self, cache_key: str) -> dict[str, Any] | None:
         with self._connect() as db:
             row = db.execute("SELECT result_json FROM match_cache WHERE cache_key=?", (cache_key,)).fetchone()
-        return json.loads(row[0]) if row else None
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row[0])
+        except (json.JSONDecodeError, TypeError):
+            LOG.warning("Ignoring malformed cached match for key %s", cache_key[:12])
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def save_match(self, cache_key: str, provider: str, result: dict[str, Any]) -> None:
         with self._connect() as db:
@@ -75,7 +85,7 @@ class JobStore:
     def start_run(self) -> int:
         with self._connect() as db:
             cursor = db.execute("INSERT INTO scan_runs(status) VALUES('running')")
-            return int(cursor.lastrowid)
+            return cast(int, cursor.lastrowid)
 
     def finish_run(self, run_id: int, status: str, summary: dict[str, Any]) -> None:
         with self._connect() as db:

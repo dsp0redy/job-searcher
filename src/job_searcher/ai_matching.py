@@ -71,16 +71,19 @@ class AIResumeMatcher:
                 self.resume_text = path.read_text(encoding="utf-8").strip()
         if not self.resume_text:
             raise ValueError("AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions")
-        self.client = httpx.Client(timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)), headers={"User-Agent": "job-searcher/0.1"})
         model_env = {
             "gemini": ("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             "claude": ("CLAUDE_MODEL", "claude-haiku-5-5"),
             "openai_compatible": ("AI_MODEL", ""),
         }
         model_env_name, default_model = model_env[self.provider]
-        self.model = os.getenv(model_env_name, default_model).strip()
+        self.model = os.getenv(model_env_name, default_model).strip() or default_model
         if self.provider == "openai_compatible" and not self.model:
             raise ValueError("AI_MODEL must be set for the openai_compatible provider")
+        self.client = httpx.Client(
+            timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)),
+            headers={"User-Agent": "job-searcher/0.1"},
+        )
 
     def close(self) -> None:
         self.client.close()
@@ -95,10 +98,13 @@ class AIResumeMatcher:
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
         cleaned = text.strip()
-        start, end = cleaned.find("{"), cleaned.rfind("}")
-        if start < 0 or end < start:
-            raise ValueError("AI response did not contain a JSON object")
-        payload = json.loads(cleaned[start:end + 1])
+        try:
+            payload = json.loads(cleaned)
+        except json.JSONDecodeError:
+            start, end = cleaned.find("{"), cleaned.rfind("}")
+            if start < 0 or end < start:
+                raise ValueError("AI response did not contain a JSON object")
+            payload = json.loads(cleaned[start:end + 1])
         if not isinstance(payload, dict):
             raise ValueError("AI response must be a JSON object")
         return payload
@@ -124,6 +130,7 @@ class AIResumeMatcher:
                     raise
                 LOG.warning("AI provider request had a transient network error; retrying attempt %d/%d", attempt + 2, max_attempts)
             time.sleep(min(2 ** attempt, 8))
+
         raise RuntimeError("AI request retries exhausted")
 
     def _request(self, prompt: str) -> str:
@@ -157,9 +164,10 @@ class AIResumeMatcher:
             )
 
         # OpenAI-compatible APIs include Groq and OpenRouter.
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
         response = self._post_with_retries(
             f"{self.base_url}/chat/completions",
             headers=headers,

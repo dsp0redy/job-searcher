@@ -29,10 +29,16 @@ class SearchOrchestrator:
         timeout = self.config.search.request_timeout_seconds
         ai_matcher: AIResumeMatcher | None = None
         publisher: GitHubIssuePublisher | None = None
+        ai_initialization_failed = False
         try:
             provider = self.config.matching.provider.casefold()
             if provider != "none":
-                ai_matcher = AIResumeMatcher(provider, timeout)
+                try:
+                    ai_matcher = AIResumeMatcher(provider, timeout)
+                except Exception as exc:
+                    # AI is optional: continue discovering/reporting jobs with local scoring.
+                    ai_initialization_failed = True
+                    LOG.error("AI matcher initialization failed (%s); continuing with local scoring", type(exc).__name__)
 
             adapters = [
                 GreenhouseAdapter(self.config.sources.greenhouse, timeout),
@@ -55,9 +61,9 @@ class SearchOrchestrator:
                         )
                         for site, site_result in site_status.items():
                             source_status[f"workday:{site}"] = site_result
-                    elif adapter.name == "greenhouse" and not adapter.board_tokens:
+                    elif adapter.name == "greenhouse" and not getattr(adapter, "board_tokens", []):
                         source_status[adapter.name] = "skipped: no Greenhouse boards configured"
-                    elif adapter.name == "lever" and not adapter.site_slugs:
+                    elif adapter.name == "lever" and not getattr(adapter, "site_slugs", []):
                         source_status[adapter.name] = "skipped: no Lever sites configured"
                     else:
                         source_status[adapter.name] = f"ok: {len(found)} postings"
@@ -67,9 +73,14 @@ class SearchOrchestrator:
                 finally:
                     adapter.close()
 
+            fetched_count = len(all_jobs)
+            # Multiple configured boards/sites can return the same posting. Keep the
+            # latest occurrence while ensuring it is scored and reported only once.
+            unique_jobs = {job.identity: job for job in all_jobs}
+            all_jobs = list(unique_jobs.values())
             inserted = self.store.upsert_jobs(all_jobs)
             cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.search.posted_within_days)
-            candidates: list[tuple[Job, dict[str, object]]] = []
+            candidates: list[tuple[Job, dict[str, Any]]] = []
             for job in all_jobs:
                 if job.posted_at and job.posted_at < cutoff:
                     continue
@@ -78,7 +89,9 @@ class SearchOrchestrator:
                     candidates.append((job, local_match))
 
             ai_results: dict[str, MatchResult] = {}
-            ai_failed: set[str] = set()
+            ai_failed: set[str] = (
+                {job.identity for job, _ in candidates} if ai_initialization_failed else set()
+            )
             ai_deferred: set[str] = set()
             ai_cached = 0
             if ai_matcher is not None:
@@ -107,11 +120,13 @@ class SearchOrchestrator:
                     results = ai_matcher.match_batch(batch)
                     ai_results.update(results)
                     for job in batch:
-                        result = results.get(job.identity)
-                        if result is None:
+                        batch_result = results.get(job.identity)
+                        if batch_result is None:
                             ai_failed.add(job.identity)
                         else:
-                            self.store.save_match(ai_matcher.cache_key(job), provider, result.model_dump())
+                            self.store.save_match(
+                                ai_matcher.cache_key(job), provider, batch_result.model_dump()
+                            )
 
             notify_enabled = self.config.notifications.github_issues
             token = self.config.github_token()
@@ -133,7 +148,7 @@ class SearchOrchestrator:
                     matched_skills = list(local_match["skill_hits"])
                     missing_skills: list[str] = []
                     improvements: list[str] = []
-                    ai_status = "disabled"
+                    ai_status = "failed" if provider != "none" else "disabled"
                 elif ai_result is not None:
                     score = ai_result.score
                     reason = ai_result.reason
@@ -170,12 +185,12 @@ class SearchOrchestrator:
                     "notification": "not_eligible",
                 }
 
-                ai_eligible = ai_matcher is None or ai_status == "matched"
+                ai_eligible = provider == "none" or ai_status == "matched"
                 if notify_enabled and ai_eligible and score >= self.config.matching.threshold:
                     if publisher is None:
                         row["notification"] = "not_configured"
                     else:
-                        result = publisher.publish(
+                        publish_result = publisher.publish(
                             job,
                             score,
                             reason,
@@ -183,14 +198,14 @@ class SearchOrchestrator:
                             missing_skills=missing_skills,
                             improvements=improvements,
                         )
-                        row["notification"] = result["status"]
+                        row["notification"] = publish_result["status"]
                         notification_results.append({
                             "company": job.company,
                             "title": job.title,
                             "score": score,
-                            **result,
+                            **publish_result,
                         })
-                elif notify_enabled and ai_matcher is not None and ai_status in {"failed", "deferred"}:
+                elif notify_enabled and provider != "none" and ai_status in {"failed", "deferred"}:
                     row["notification"] = f"ai_{ai_status}"
 
                 rows.append(row)
@@ -199,12 +214,17 @@ class SearchOrchestrator:
             summary = {
                 "run_id": run_id,
                 "sources": source_status,
-                "postings_fetched": len(all_jobs),
+                "postings_fetched": fetched_count,
                 "new_identities": inserted,
                 "qualified_candidates": len(rows),
-                "matching": provider if ai_matcher else "deterministic local scoring",
+                "matching": provider if ai_matcher else (
+                    "deterministic local scoring (AI unavailable)" if provider != "none"
+                    else "deterministic local scoring"
+                ),
                 "ai": {
                     "enabled": ai_matcher is not None,
+                    "requested": provider != "none",
+                    "initialization_failed": ai_initialization_failed,
                     "scored": len(ai_results) - ai_cached,
                     "matched_including_cache": len(ai_results),
                     "cached": ai_cached,

@@ -9,7 +9,7 @@ A Python job-discovery tool tailored for C++ / Linux / embedded systems roles. I
 - **SQLite persistence** with stable source/company/requisition identity, a match cache table, and scan-run history.
 - **CSV, JSON, and Markdown reports** uploaded as a GitHub Actions artifact.
 - **Optional GitHub Issues notifications** for jobs at or above the configured score threshold. Issues include a stable hidden marker so subsequent runs can avoid creating a second issue for the same job.
-- **CI** with Ruff linting and pytest coverage; scheduled scans run on weekdays.
+- **CI** with Ruff, strict mypy checks, deterministic end-to-end tests, property-based fuzzing, and a 100% line-and-branch coverage gate; scheduled scans run on weekdays.
 
 Optional batch-based AI resume matching supports **Gemini**, **Claude**, and any **OpenAI-compatible API endpoint** (including Groq- and OpenRouter-compatible APIs). Local keyword scoring remains the prefilter; AI scoring runs only for the highest-ranked candidates, with a configurable per-scan cap and SQLite caching keyed by job, resume, provider, endpoint, and model. Leave `matching.provider: none` for local-only mode.
 
@@ -40,9 +40,12 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 job-searcher --config config.yml --check-config
 job-searcher --config config.yml --output-dir reports
-pytest
 ruff check src tests
+mypy src/job_searcher
+pytest --cov=job_searcher --cov-report=term-missing
 ```
+
+The test suite uses mocked provider/network responses and temporary SQLite databases; it does not consume live AI tokens or create real GitHub Issues. Hypothesis-based fuzz tests exercise scoring, identity normalization, and Workday date parsing with generated inputs. CI enforces 100% statement and branch coverage.
 
 The checked-in `config.yml` is pre-populated with a set of Workday career-site URLs and a profile for C++ / Linux / embedded roles. Employer URLs can change; failures are logged per site and do not stop other adapters. Add Greenhouse board tokens or Lever site slugs to their corresponding lists when needed.
 

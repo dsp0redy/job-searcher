@@ -17,4 +17,5 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e '.[dev]'
       - run: ruff check src tests
+      - run: mypy src/job_searcher
       - run: pytest --cov=job_searcher --cov-report=term-missing
