@@ -58,7 +58,10 @@ def test_cli_verbose_enables_debug_logging(monkeypatch, capsys):
 
 def test_cli_module_entrypoint_executes_check_config(monkeypatch, capsys):
     import runpy
+    import warnings
     monkeypatch.setattr(sys, "argv", ["job-searcher", "--config", "config.yml", "--check-config"])
-    runpy.run_module("job_searcher.cli", run_name="__main__")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        runpy.run_module("job_searcher.cli", run_name="__main__")
     assert "Configuration valid" in capsys.readouterr().out
 
