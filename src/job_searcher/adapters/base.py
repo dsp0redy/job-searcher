@@ -7,6 +7,7 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -85,7 +86,7 @@ class JobSource(ABC):
                 if method.upper() == "GET":
                     response = self.client.get(url, params=params) if params is not None else self.client.get(url)
                 else:
-                    request_kwargs: dict[str, object] = {}
+                    request_kwargs: dict[str, Any] = {}
                     if params is not None:
                         request_kwargs["params"] = params
                     if json_body is not None:
