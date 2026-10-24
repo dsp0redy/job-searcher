@@ -1,6 +1,12 @@
 name: Public source contract smoke check
 
 on:
+  pull_request:
+    paths:
+      - "config.yml"
+      - "src/job_searcher/adapters/**"
+      - "scripts/check_source_contracts.py"
+      - ".github/workflows/source-contract-check.yml"
   workflow_dispatch:
   schedule:
     - cron: "43 6 * * 2"
