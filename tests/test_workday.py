@@ -307,3 +307,54 @@ def test_fetch_handles_detail_info_with_mixed_additional_locations(monkeypatch: 
     assert jobs[0].employment_type is None
     assert jobs[0].description == "role"
 
+def test_fetch_marks_invalid_response_schema_as_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = WorkdayAdapter(["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"], max_pages=1)
+    monkeypatch.setattr(adapter.client, "post", lambda *a, **kw: FakeResponse({"wrong": []}))
+    try:
+        assert adapter.fetch() == []
+        assert adapter.site_status["nvidia/NVIDIAExternalCareerSite"] == "failed: no successful job-search response"
+    finally:
+        adapter.close()
+
+
+def test_fetch_uses_listing_location_when_job_posting_info_is_not_a_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = WorkdayAdapter(["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"], max_pages=1)
+    listing = {"jobPostings": [{
+        "externalPath": "/job/Engineer_REQ-1", "title": "Engineer",
+        "locationsText": "Listing location",
+    }], "total": 1}
+    monkeypatch.setattr(adapter.client, "post", lambda *a, **kw: FakeResponse(listing))
+    monkeypatch.setattr(adapter.client, "get", lambda *a, **kw: FakeResponse({"jobPostingInfo": []}))
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert jobs[0].location == "Listing location"
+
+
+def test_fetch_stops_when_total_is_reached(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = WorkdayAdapter(["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"], max_pages=3, detail_limit=0)
+    postings = [{"externalPath": f"/job/Engineer_REQ-{i}", "title": f"Engineer {i}"} for i in range(20)]
+    offsets = []
+    def post(url, json):
+        offsets.append(json["offset"])
+        return FakeResponse({"jobPostings": postings, "total": 20})
+    monkeypatch.setattr(adapter.client, "post", post)
+    try:
+        assert len(adapter.fetch()) == 20
+    finally:
+        adapter.close()
+    assert offsets == [0]
+
+
+def test_fetch_handles_non_integer_total_after_full_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = WorkdayAdapter(["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"], max_pages=1, detail_limit=0)
+    postings = [{"externalPath": f"/job/Engineer_REQ-{i}", "title": f"Engineer {i}"} for i in range(20)]
+    monkeypatch.setattr(adapter.client, "post", lambda *a, **kw: FakeResponse({"jobPostings": postings, "total": "20"}))
+    try:
+        assert len(adapter.fetch()) == 20
+    finally:
+        adapter.close()
+
