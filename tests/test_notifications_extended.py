@@ -143,3 +143,14 @@ def test_publish_rejects_non_object_create_response(monkeypatch):
     finally:
         publisher.close()
 
+def test_existing_issue_loader_caps_scan_at_ten_pages(monkeypatch):
+    publisher = GitHubIssuePublisher("owner/repo", "token")
+    calls = []
+    monkeypatch.setattr(publisher.client, "get", lambda url, params: (calls.append(params["page"]), FakeResponse([{"body": "none"}] * 100))[1])
+    try:
+        publisher._load_existing_issues()
+        assert calls == list(range(1, 11))
+        assert publisher._issues_loaded is True
+    finally:
+        publisher.close()
+
