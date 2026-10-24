@@ -20,7 +20,7 @@ Source failures are logged independently. This is not a universal job crawler an
 
 ## Matching and filtering
 
-Local matching scores configured title matches, location matches, and skills found in the job title/description. Optional AI matching can then compare a resume against selected jobs. Set `matching.provider` to `gemini` or `claude`; set `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`, and provide plain-text resume content in `RESUME_TEXT`. Use GitHub Actions Secrets for scheduled runs. A score is a relevance estimate, not an interview probability.
+Local matching scores configured title matches, location matches, and skills found in the job title/description. The checked-in configuration defaults to Gemini AI matching, which compares a resume against selected jobs. Add `GEMINI_API_KEY` and plain-text resume content as `RESUME_TEXT` in GitHub Actions Secrets. To use Claude instead, set `matching.provider: claude` and add `ANTHROPIC_API_KEY`; for local-only scoring set `matching.provider: none`. A score is a relevance estimate, not an interview probability.
 
 AI calls are bounded by `matching.max_ai_jobs_per_scan` (40 by default) and grouped using `matching.max_jobs_per_ai_batch` (8 by default). Successful results are cached in SQLite using a key that includes the resume text, job content, provider, and model. Missing or invalid results are not cached as successful matches, so they can be retried later.
 
