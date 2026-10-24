@@ -155,7 +155,7 @@ class SearchOrchestrator:
                     usage = getattr(ai_matcher, "last_usage", {})
                     for token_key in ai_usage:
                         token_value = usage.get(token_key, 0) if isinstance(usage, dict) else 0
-                        if isinstance(token_value, int) and token_value >= 0:
+                        if isinstance(token_value, int) and not isinstance(token_value, bool) and token_value >= 0:
                             ai_usage[token_key] += token_value
                     ai_results.update(results)
                     for job in batch:

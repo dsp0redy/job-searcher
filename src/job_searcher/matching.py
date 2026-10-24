@@ -51,6 +51,7 @@ def extract_experience_range(text: str) -> tuple[float | None, float | None]:
         if minimum <= maximum:
             return minimum, maximum
         return None, None
+
     minimum_match = re.search(
         r"(?:(?:at least|minimum(?: of)?|over|more than)\s*)?(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b"
         r"(?:\s+of)?\s+(?:relevant\s+)?experience\b|"
@@ -66,7 +67,6 @@ def extract_experience_range(text: str) -> tuple[float | None, float | None]:
     if plus_match:
         return float(plus_match.group(1)), None
     return None, None
-
 
 def is_experience_compatible(
     minimum_required: float | None,

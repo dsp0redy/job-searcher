@@ -97,6 +97,7 @@ def test_out_of_area_job_gets_zero_local_score_even_if_title_and_skills_match():
         ("Minimum of 3 years of experience", (3.0, None)),
         ("5 years experience in C++", (5.0, None)),
         ("8+ years of relevant experience", (8.0, None)),
+        ("8+ years", (8.0, None)),
         ("At least 4 yrs experience", (4.0, None)),
         ("At least 4 years", (4.0, None)),
         ("No experience details listed", (None, None)),
