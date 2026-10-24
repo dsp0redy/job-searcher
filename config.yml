@@ -41,5 +41,5 @@ sources:
     - "https://motorolasolutions.wd5.myworkdayjobs.com/Careers"
     - "https://honeywell.wd5.myworkdayjobs.com/Honeywell"
 notifications:
-  github_issues: false
+  github_issues: true
   repository: ""
