@@ -34,7 +34,7 @@ def test_local_score_is_always_bounded(title, description, location, skills, tit
     result = score_job(job, profile)
     assert isinstance(result["score"], int)
     assert 0 <= result["score"] <= 100
-    assert set(result) == {"score", "title_hits", "location_hits", "skill_hits", "reason"}
+    assert set(result) == {"score", "title_hits", "location_hits", "skill_hits", "location_allowed", "reason"}
 
 
 @given(st.text(max_size=200))
