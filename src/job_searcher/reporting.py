@@ -2,8 +2,12 @@
 from __future__ import annotations
 import csv
 import json
+import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+LOG = logging.getLogger(__name__)
 
 
 def _safe_csv_cell(value: object) -> object:
@@ -66,3 +70,26 @@ def write_digest(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> Pa
         lines.append("")
     digest_path.write_text("\\n".join(lines).rstrip() + "\\n", encoding="utf-8")
     return digest_path
+
+
+
+def prune_old_reports(output_dir: str, retention_days: int) -> int:
+    """Remove only old scan report files, preserving unrelated files in the output directory."""
+    if retention_days < 1 or retention_days > 3650:
+        raise ValueError("retention_days must be between 1 and 3650")
+    root = Path(output_dir)
+    if not root.is_dir():
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    removed = 0
+    for path in root.glob("scan-*"):
+        if not path.is_file():
+            continue
+        try:
+            modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+            if modified < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError as exc:
+            LOG.warning("Could not prune old report %s (%s)", path.name, type(exc).__name__)
+    return removed
