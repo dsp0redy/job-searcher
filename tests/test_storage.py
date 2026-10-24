@@ -52,3 +52,22 @@ def test_save_match_replaces_existing_cache_entry(tmp_path):
     store.save_match("same-key", "claude", {"score": 90})
     assert store.get_match("same-key") == {"score": 90}
 
+def test_corrupt_match_cache_is_treated_as_cache_miss(tmp_path):
+    store = JobStore(str(tmp_path / "jobs.sqlite3"))
+    with store._connect() as db:
+        db.execute(
+            "INSERT INTO match_cache(cache_key,provider,result_json) VALUES(?,?,?)",
+            ("broken", "gemini", "{invalid"),
+        )
+    assert store.get_match("broken") is None
+
+
+def test_non_object_match_cache_is_treated_as_cache_miss(tmp_path):
+    store = JobStore(str(tmp_path / "jobs.sqlite3"))
+    with store._connect() as db:
+        db.execute(
+            "INSERT INTO match_cache(cache_key,provider,result_json) VALUES(?,?,?)",
+            ("array", "gemini", "[]"),
+        )
+    assert store.get_match("array") is None
+
