@@ -57,6 +57,13 @@ def install_sources(monkeypatch, jobs, failed=()):
         def build(*args, **kwargs):
             source_jobs = jobs if name == "greenhouse" else []
             instance = FakeSource(name, source_jobs, fail=name in failed)
+            configured = args[0] if args else []
+            if name == "greenhouse":
+                instance.board_tokens = configured
+            elif name == "lever":
+                instance.site_slugs = configured
+            elif name == "workday":
+                instance.site_status = {"tenant/site": "ok: 0 postings"} if configured else {}
             created[name] = instance
             return instance
         return build
@@ -196,3 +203,103 @@ def test_orchestrator_marks_exceptional_run_failed_and_closes_ai(tmp_path, monke
     assert run["status"] == "failed"
     assert '"error_type": "OSError"' in run["summary_json"]
     assert closed == [True]
+
+def test_unconfigured_sources_are_reported_as_skipped(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [])
+    config = make_config(tmp_path)
+    config.sources.greenhouse = []
+    config.sources.lever = []
+    config.sources.workday = []
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["sources"]["greenhouse"] == "skipped: no Greenhouse boards configured"
+    assert summary["sources"]["lever"] == "skipped: no Lever sites configured"
+    assert summary["run_status"] == "no_sources_succeeded"
+
+
+def test_old_jobs_are_stored_but_excluded_from_candidates(tmp_path, monkeypatch):
+    from datetime import timedelta
+    old_job = make_job()
+    old_job = old_job.model_copy(update={"posted_at": datetime.now(timezone.utc) - timedelta(days=100)})
+    install_sources(monkeypatch, [old_job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["postings_fetched"] == 1
+    assert summary["qualified_candidates"] == 0
+    with SearchOrchestrator(make_config(tmp_path)).store._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+
+
+def test_invalid_cached_ai_result_is_ignored_and_recomputed(tmp_path, monkeypatch):
+    job = make_job()
+    install_sources(monkeypatch, [job])
+    from job_searcher.storage import JobStore
+    JobStore(str(tmp_path / "state.sqlite3")).save_match(
+        "cache-" + job.identity, "gemini",
+        {"job_id": "wrong", "score": 101, "reason": ""},
+    )
+    class Matcher:
+        calls = 0
+        def __init__(self, provider, timeout): pass
+        def cache_key(self, item): return "cache-" + item.identity
+        def match_batch(self, batch):
+            self.calls += 1
+            return {item.identity: MatchResult(job_id=item.identity, score=77, reason="recomputed") for item in batch}
+        def close(self): pass
+    matcher = Matcher("gemini", 10)
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", lambda *a, **kw: matcher)
+    summary = SearchOrchestrator(make_config(tmp_path, provider="gemini")).run(str(tmp_path / "reports"))
+    assert matcher.calls == 1
+    assert summary["ai"]["scored"] == 1
+
+
+def test_ai_jobs_are_processed_in_multiple_batches(tmp_path, monkeypatch):
+    jobs = [make_job("1"), make_job("2")]
+    install_sources(monkeypatch, jobs)
+    class Matcher:
+        def __init__(self, provider, timeout): self.batch_sizes = []
+        def cache_key(self, item): return item.identity
+        def match_batch(self, batch):
+            self.batch_sizes.append(len(batch))
+            return {item.identity: MatchResult(job_id=item.identity, score=75, reason="fit") for item in batch}
+        def close(self): pass
+    matcher = Matcher("gemini", 10)
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", lambda *a, **kw: matcher)
+    summary = SearchOrchestrator(make_config(tmp_path, provider="gemini", max_jobs_per_ai_batch=1)).run(
+        str(tmp_path / "reports")
+    )
+    assert matcher.batch_sizes == [1, 1]
+    assert summary["ai"]["scored"] == 2
+
+
+@pytest.mark.parametrize("publish_status", ["created", "already_exists", "failed"])
+def test_notification_results_are_reported(tmp_path, monkeypatch, publish_status):
+    job = make_job()
+    install_sources(monkeypatch, [job])
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    class Publisher:
+        def __init__(self, repository, token, timeout): self.closed = False
+        def publish(self, *args, **kwargs):
+            return {"status": publish_status, "issue_url": "https://example.com/issue"}
+        def close(self): self.closed = True
+    publisher_instances = []
+    def publisher_factory(*args, **kwargs):
+        instance = Publisher(*args, **kwargs)
+        publisher_instances.append(instance)
+        return instance
+    monkeypatch.setattr(orchestrator_module, "GitHubIssuePublisher", publisher_factory)
+    config = make_config(tmp_path, notifications=True)
+    config.matching.threshold = 50
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["notifications"][publish_status if publish_status != "already_exists" else "already_exists"] >= 0
+    assert summary["notifications"]["results"][0]["status"] == publish_status
+    assert publisher_instances[0].closed is True
+
+
+def test_notifications_enabled_without_credentials_do_not_abort_scan(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [make_job()])
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    config = make_config(tmp_path, notifications=True)
+    config.matching.threshold = 50
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["notifications"]["not_configured"] is True
+
