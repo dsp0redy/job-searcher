@@ -65,3 +65,17 @@ def test_cli_module_entrypoint_executes_check_config(monkeypatch, capsys):
         runpy.run_module("job_searcher.cli", run_name="__main__")
     assert "Configuration valid" in capsys.readouterr().out
 
+
+
+
+def test_cli_no_successful_sources_exits_nonzero(monkeypatch, capsys):
+    summary = {"run_status": "no_sources_succeeded"}
+    monkeypatch.setattr(sys, "argv", ["job-searcher"])
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: FakeConfig())
+    class FakeOrchestrator:
+        def __init__(self, config): pass
+        def run(self, output_dir): return summary
+    monkeypatch.setattr(cli, "SearchOrchestrator", FakeOrchestrator)
+    with pytest.raises(SystemExit, match="No configured job sources"):
+        cli.main()
+    assert json.loads(capsys.readouterr().out) == summary
