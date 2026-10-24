@@ -162,3 +162,17 @@ def test_cli_review_status_without_existing_review_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["job-searcher", "--job-identity", "unknown"])
     with pytest.raises(SystemExit, match="No review status found"):
         cli.main()
+
+
+
+def test_cli_notification_failure_exits_nonzero_after_report(monkeypatch, capsys):
+    summary = {"run_status": "partial_notification_failure"}
+    monkeypatch.setattr(sys, "argv", ["job-searcher"])
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: FakeConfig())
+    class FakeOrchestrator:
+        def __init__(self, config): pass
+        def run(self, output_dir): return summary
+    monkeypatch.setattr(cli, "SearchOrchestrator", FakeOrchestrator)
+    with pytest.raises(SystemExit, match="notification delivery needs attention"):
+        cli.main()
+    assert json.loads(capsys.readouterr().out) == summary
