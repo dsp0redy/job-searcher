@@ -192,6 +192,7 @@ class SearchOrchestrator:
                     ai_status = "deferred" if job.identity in ai_deferred else "failed"
 
                 row: dict[str, Any] = {
+                    "identity": job.identity,
                     "source": job.source,
                     "source_id": job.source_id,
                     "company": job.company,
