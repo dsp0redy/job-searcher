@@ -63,3 +63,18 @@ def test_ai_provider_requires_secret_and_resume(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     with pytest.raises(ValueError, match="RESUME_TEXT"):
         AIResumeMatcher("gemini")
+
+
+def test_matcher_can_load_a_local_text_resume_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    resume_file = tmp_path / "resume.txt"
+    resume_file.write_text("C++ Linux developer", encoding="utf-8")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("RESUME_TEXT", raising=False)
+    monkeypatch.setenv("RESUME_FILE", str(resume_file))
+    matcher = AIResumeMatcher("gemini")
+    try:
+        assert matcher.resume_text == "C++ Linux developer"
+    finally:
+        matcher.close()
