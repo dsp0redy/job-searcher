@@ -35,8 +35,19 @@ class AIResumeMatcher:
         if not self.api_key:
             raise ValueError(f"matching.provider is '{self.provider}' but {env_name} is not set")
         self.resume_text = os.getenv("RESUME_TEXT", "").strip()
+        resume_file = os.getenv("RESUME_FILE", "").strip()
+        if not self.resume_text and resume_file:
+            path = Path(resume_file)
+            if not path.is_file():
+                raise ValueError(f"RESUME_FILE does not exist: {path}")
+            if path.suffix.casefold() == ".pdf":
+                from pypdf import PdfReader
+
+                self.resume_text = "\\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages).strip()
+            else:
+                self.resume_text = path.read_text(encoding="utf-8").strip()
         if not self.resume_text:
-            raise ValueError("AI matching is enabled but RESUME_TEXT is empty; store resume text in a GitHub Secret")
+            raise ValueError("AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions")
         self.client = httpx.Client(timeout=timeout, headers={"User-Agent": "job-searcher/0.1"})
         self.model = (
             os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
