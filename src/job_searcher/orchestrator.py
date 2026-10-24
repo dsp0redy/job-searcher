@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -10,7 +11,7 @@ from .adapters.lever import LeverAdapter
 from .adapters.workday import WorkdayAdapter
 from .ai_matching import AIResumeMatcher, MatchResult
 from .config import AppConfig
-from .matching import is_allowed_location, score_job
+from .matching import extract_experience_range, is_allowed_location, is_experience_compatible, score_job
 from .models import Job
 from .notifications import GitHubIssuePublisher
 from .reporting import write_reports
@@ -25,6 +26,7 @@ class SearchOrchestrator:
         self.store = JobStore(config.storage.path)
 
     def run(self, output_dir: str = "reports") -> dict[str, Any]:
+        started_monotonic = time.monotonic()
         run_id = self.store.start_run()
         timeout = self.config.search.request_timeout_seconds
         ai_matcher: AIResumeMatcher | None = None
@@ -81,8 +83,10 @@ class SearchOrchestrator:
             inserted = self.store.upsert_jobs(all_jobs)
             cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.search.posted_within_days)
             candidates: list[tuple[Job, dict[str, Any]]] = []
+            experience_evidence: dict[str, dict[str, float | None]] = {}
             excluded_by_location = 0
             excluded_by_freshness = 0
+            excluded_by_experience = 0
             for job in all_jobs:
                 if not is_allowed_location(job.location, self.config.profile):
                     excluded_by_location += 1
@@ -90,6 +94,16 @@ class SearchOrchestrator:
                 if job.posted_at and job.posted_at < cutoff:
                     excluded_by_freshness += 1
                     continue
+                required_min, required_max = job.experience_min, job.experience_max
+                if required_min is None and required_max is None:
+                    required_min, required_max = extract_experience_range(f"{job.title}\\n{job.description}")
+                if not is_experience_compatible(required_min, required_max, self.config.profile):
+                    excluded_by_experience += 1
+                    continue
+                experience_evidence[job.identity] = {
+                    "minimum_years": required_min,
+                    "maximum_years": required_max,
+                }
                 local_match = score_job(job, self.config.profile)
                 if int(local_match["score"]) >= self.config.search.minimum_local_score:
                     candidates.append((job, local_match))
@@ -178,6 +192,10 @@ class SearchOrchestrator:
                     "location": job.location,
                     "url": str(job.url),
                     "posted_at": job.posted_at.isoformat() if job.posted_at else None,
+                    "freshness_status": "undated" if job.posted_at is None else "within_configured_window",
+                    "experience_requirement": experience_evidence.get(job.identity, {
+                        "minimum_years": None, "maximum_years": None,
+                    }),
                     "score": score,
                     "local_score": local_score,
                     "ai_score": ai_result.score if ai_result else None,
@@ -225,6 +243,13 @@ class SearchOrchestrator:
                 "qualified_candidates": len(rows),
                 "excluded_by_location": excluded_by_location,
                 "excluded_by_freshness": excluded_by_freshness,
+                "excluded_by_experience": excluded_by_experience,
+                "elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
+                "source_health": {
+                    "successful": sum(source_status.get(name, "").startswith("ok:") for name in ("greenhouse", "lever", "workday")),
+                    "failed": sum(source_status.get(name, "").startswith("failed:") for name in ("greenhouse", "lever", "workday")),
+                    "skipped": sum(source_status.get(name, "").startswith("skipped:") for name in ("greenhouse", "lever", "workday")),
+                },
                 "matching": provider if ai_matcher else (
                     "deterministic local scoring (AI unavailable)" if provider != "none"
                     else "deterministic local scoring"
