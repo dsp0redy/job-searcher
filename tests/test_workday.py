@@ -10,7 +10,7 @@ from job_searcher.adapters.workday import WorkdayAdapter
     [
         ("https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
          ("nvidia.wd5.myworkdayjobs.com", "nvidia", "NVIDIAExternalCareerSite")),
-        ("https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite",
+        ("https://nvidia.wd5.myworkdayjobs.com/en-US/AnotherCareerSite",
          ("nvidia.wd5.myworkdayjobs.com", "nvidia", "NVIDIAExternalCareerSite")),
     ],
 )
@@ -98,7 +98,8 @@ def test_fetch_normalizes_listing_and_detail_fields(monkeypatch: pytest.MonkeyPa
     assert jobs[0].location == "Bengaluru | Hyderabad"
     assert jobs[0].description == "C++ systems role"
     assert jobs[0].posted_at is not None
-    assert adapter.site_status["nvidia"] == "ok: 1 postings"
+    assert adapter.site_status["nvidia/NVIDIAExternalCareerSite"] == "ok: 1 postings"
+    assert adapter.site_status["nvidia/AnotherCareerSite"] == "ok: 0 postings"
 
 
 def test_fetch_records_failed_site_status(monkeypatch: pytest.MonkeyPatch) -> None:
