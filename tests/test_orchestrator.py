@@ -42,7 +42,7 @@ class FakeSource:
 def make_config(tmp_path, provider="none", notifications=False, **matching_overrides):
     matching = MatchingConfig(provider=provider, **matching_overrides)
     return AppConfig(
-        profile=ProfileConfig(titles=["Engineer"], locations=["Bengaluru", "Bangalore", "Hyderabad"], skills=["C++", "Linux"]),
+        profile=ProfileConfig(titles=["Engineer"], locations=["Bengaluru", "Bangalore", "Hyderabad"], minimum_experience_years=2, maximum_experience_years=5, skills=["C++", "Linux"]),
         search=SearchConfig(minimum_local_score=0, posted_within_days=14),
         storage=StorageConfig(path=str(tmp_path / "state.sqlite3")),
         matching=matching,
@@ -390,3 +390,24 @@ def test_bengaluru_and_hyderabad_jobs_remain_eligible(tmp_path, monkeypatch, loc
     summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
     assert summary["excluded_by_location"] == 0
     assert summary["qualified_candidates"] == 1
+
+
+
+def test_explicitly_senior_experience_requirement_is_excluded(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"description": "Requires 8+ years of experience in C++."})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_experience"] == 1
+    assert summary["qualified_candidates"] == 0
+
+
+def test_unknown_experience_requirement_is_kept_with_transparent_evidence(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"description": "C++ Linux systems development"})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_experience"] == 0
+    import json
+    from pathlib import Path
+    rows = json.loads(Path(summary["reports"][0]).read_text(encoding="utf-8"))
+    assert rows[0]["experience_requirement"] == {"minimum_years": None, "maximum_years": None}
+    assert rows[0]["freshness_status"] == "within_configured_window"
