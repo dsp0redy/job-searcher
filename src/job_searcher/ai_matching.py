@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ class MatchResult(BaseModel):
 class AIResumeMatcher:
     """Evaluate small job batches using a configured provider; secrets are environment-only."""
 
-    def __init__(self, provider: str, timeout: float = 30) -> None:
+    def __init__(self, provider: str, timeout: float = 75) -> None:
         self.provider = provider.casefold()
         if self.provider not in {"gemini", "claude"}:
             raise ValueError("AI provider must be 'gemini' or 'claude'")
@@ -49,7 +50,7 @@ class AIResumeMatcher:
                 self.resume_text = path.read_text(encoding="utf-8").strip()
         if not self.resume_text:
             raise ValueError("AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions")
-        self.client = httpx.Client(timeout=timeout, headers={"User-Agent": "job-searcher/0.1"})
+        self.client = httpx.Client(timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)), headers={"User-Agent": "job-searcher/0.1"})
         self.model = (
             os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
             if self.provider == "gemini"
@@ -77,9 +78,32 @@ class AIResumeMatcher:
             raise ValueError("AI response must be a JSON object")
         return payload
 
+    def _post_with_retries(self, url: str, **kwargs: Any) -> httpx.Response:
+        """Retry transient network, rate-limit, and server errors with bounded backoff."""
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                response = self.client.post(url, **kwargs)
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError as exc:
+                retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
+                if not retryable or attempt == max_attempts - 1:
+                    raise
+                LOG.warning(
+                    "AI provider returned HTTP %d; retrying attempt %d/%d",
+                    exc.response.status_code, attempt + 2, max_attempts,
+                )
+            except (httpx.TimeoutException, httpx.NetworkError):
+                if attempt == max_attempts - 1:
+                    raise
+                LOG.warning("AI provider request had a transient network error; retrying attempt %d/%d", attempt + 2, max_attempts)
+            time.sleep(min(2 ** attempt, 8))
+        raise RuntimeError("AI request retries exhausted")
+
     def _request(self, prompt: str) -> str:
         if self.provider == "gemini":
-            response = self.client.post(
+            response = self._post_with_retries(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
                 params={"key": self.api_key},
                 json={
@@ -87,10 +111,9 @@ class AIResumeMatcher:
                     "generationConfig": {"responseMimeType": "application/json", "temperature": 0.1},
                 },
             )
-            response.raise_for_status()
             data = response.json()
             return str(data["candidates"][0]["content"]["parts"][0]["text"])
-        response = self.client.post(
+        response = self._post_with_retries(
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
             json={
@@ -100,7 +123,6 @@ class AIResumeMatcher:
                 "messages": [{"role": "user", "content": prompt}],
             },
         )
-        response.raise_for_status()
         data = response.json()
         return "\n".join(
             str(block.get("text", "")) for block in data.get("content", []) if block.get("type") == "text"
