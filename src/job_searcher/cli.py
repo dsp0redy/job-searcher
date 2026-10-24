@@ -57,9 +57,10 @@ def main() -> None:
         else:
             if args.review_notes:
                 parser.error("--review-notes requires --review-status")
-            result = store.get_review_status(args.job_identity)
-            if result is None:
+            review_result = store.get_review_status(args.job_identity)
+            if review_result is None:
                 raise SystemExit(f"No review status found for job identity: {args.job_identity}")
+            result = review_result
         print(json.dumps(result, indent=2))
         return
     if args.review_status or args.review_notes:
