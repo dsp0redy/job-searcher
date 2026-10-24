@@ -453,3 +453,14 @@ def test_compatible_provider_requires_model(monkeypatch):
     with pytest.raises(ValueError, match="AI_MODEL"):
         AIResumeMatcher("openai_compatible")
 
+def test_retry_loop_has_defensive_empty_range_guard(monkeypatch):
+    import job_searcher.ai_matching as ai_module
+    configure_ai(monkeypatch)
+    matcher = AIResumeMatcher("gemini")
+    monkeypatch.setattr(ai_module, "range", lambda *_: [], raising=False)
+    try:
+        with pytest.raises(RuntimeError, match="retries exhausted"):
+            matcher._post_with_retries("https://example.com")
+    finally:
+        matcher.close()
+
