@@ -2,6 +2,12 @@ name: Scheduled job scan
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Safely scan live sources without AI calls or job Issue creation"
+        type: boolean
+        required: true
+        default: true
   schedule:
     - cron: "17 2 * * 1-5"
 
@@ -55,7 +61,11 @@ jobs:
           key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             job-search-reports-
-      - name: Run job search
+      - name: Run safe live-source dry run
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: job-searcher --config config.yml --output-dir reports --dry-run
+      - name: Run scheduled or explicitly enabled live scan
+        if: github.event_name != 'workflow_dispatch' || !inputs.dry_run
         run: job-searcher --config config.yml --output-dir reports
       - name: Save recent report snapshots
         if: success()
