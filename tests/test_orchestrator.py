@@ -42,7 +42,7 @@ class FakeSource:
 def make_config(tmp_path, provider="none", notifications=False, **matching_overrides):
     matching = MatchingConfig(provider=provider, **matching_overrides)
     return AppConfig(
-        profile=ProfileConfig(titles=["Engineer"], locations=["Bengaluru"], skills=["C++", "Linux"]),
+        profile=ProfileConfig(titles=["Engineer"], locations=["Bengaluru", "Bangalore", "Hyderabad"], skills=["C++", "Linux"]),
         search=SearchConfig(minimum_local_score=0, posted_within_days=14),
         storage=StorageConfig(path=str(tmp_path / "state.sqlite3")),
         matching=matching,
@@ -353,3 +353,40 @@ def test_cached_result_with_wrong_job_id_is_recomputed(tmp_path, monkeypatch):
     assert matcher.calls == 1
     assert summary["ai"]["scored"] == 1
 
+
+
+
+def test_out_of_area_job_never_becomes_candidate_or_github_issue(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"location": "Pune, Maharashtra, India"})
+    install_sources(monkeypatch, [job])
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    calls = []
+
+    class Publisher:
+        def __init__(self, repository, token, timeout):
+            pass
+        def publish(self, *args, **kwargs):
+            calls.append(args[0].location)
+            return {"status": "created", "issue_url": "https://example.com/issue"}
+        def close(self):
+            pass
+
+    monkeypatch.setattr(orchestrator_module, "GitHubIssuePublisher", Publisher)
+    config = make_config(tmp_path, notifications=True)
+    config.matching.threshold = 0
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+
+    assert summary["postings_fetched"] == 1
+    assert summary["excluded_by_location"] == 1
+    assert summary["qualified_candidates"] == 0
+    assert summary["notifications"]["created"] == 0
+    assert calls == []
+
+
+@pytest.mark.parametrize("location", ["Bangalore, India", "Hyderabad, Telangana, India"])
+def test_bengaluru_and_hyderabad_jobs_remain_eligible(tmp_path, monkeypatch, location):
+    job = make_job().model_copy(update={"location": location})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_location"] == 0
+    assert summary["qualified_candidates"] == 1
