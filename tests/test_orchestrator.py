@@ -411,3 +411,25 @@ def test_unknown_experience_requirement_is_kept_with_transparent_evidence(tmp_pa
     rows = json.loads(Path(summary["reports"][0]).read_text(encoding="utf-8"))
     assert rows[0]["experience_requirement"] == {"minimum_years": None, "maximum_years": None}
     assert rows[0]["freshness_status"] == "within_configured_window"
+
+
+
+def test_ai_usage_and_cost_are_reported_only_when_rates_are_configured(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [make_job()])
+
+    class Matcher:
+        last_usage = {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+        def __init__(self, provider, timeout): pass
+        def cache_key(self, job): return "unused-" + job.identity
+        def match_batch(self, batch):
+            return {job.identity: MatchResult(job_id=job.identity, score=80, reason="evidence") for job in batch}
+        def close(self): pass
+
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", Matcher)
+    config = make_config(tmp_path, provider="gemini")
+    config.matching.input_cost_usd_per_million_tokens = 2.0
+    config.matching.output_cost_usd_per_million_tokens = 4.0
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["ai"]["token_usage"] == {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+    assert summary["ai"]["estimated_cost_usd"] == 0.0004
+    assert summary["ai"]["cost_estimate_configured"] is True
