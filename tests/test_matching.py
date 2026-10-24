@@ -1,7 +1,7 @@
 import pytest
 
 from job_searcher.config import ProfileConfig
-from job_searcher.matching import (extract_experience_range, is_allowed_location, is_experience_compatible, score_job)
+from job_searcher.matching import (_contains_location, extract_experience_range, is_allowed_location, is_experience_compatible, score_job)
 from job_searcher.models import Job
 
 
@@ -98,6 +98,7 @@ def test_out_of_area_job_gets_zero_local_score_even_if_title_and_skills_match():
         ("5 years experience in C++", (5.0, None)),
         ("8+ years of relevant experience", (8.0, None)),
         ("At least 4 yrs experience", (4.0, None)),
+        ("At least 4 years", (4.0, None)),
         ("No experience details listed", (None, None)),
         ("Requires 8-3 years experience", (None, None)),
     ],
@@ -126,3 +127,9 @@ def test_reviewed_location_regression_fixture():
     assert cases
     for case in cases:
         assert is_allowed_location(case["location"], profile) is case["allowed"], case["location"]
+
+
+
+def test_location_match_handles_empty_and_custom_location_terms():
+    assert not _contains_location("Bengaluru, India", "")
+    assert _contains_location("Pune, Maharashtra", "Pune")
