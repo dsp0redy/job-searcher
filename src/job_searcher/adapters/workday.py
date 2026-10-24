@@ -165,7 +165,7 @@ class WorkdayAdapter(JobSource):
                 if len(postings) < 20 or (isinstance(total, int) and (page + 1) * 20 >= total):
                     break
             count = len(jobs) - site_start_count
-            self.site_status[tenant] = (
+            self.site_status[f"{tenant}/{site}"] = (
                 f"ok: {count} postings" if site_succeeded
                 else "failed: no successful job-search response"
             )
