@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from hashlib import sha256
 import os
 import re
 from typing import Any
@@ -17,7 +18,7 @@ LOG = logging.getLogger(__name__)
 
 class MatchResult(BaseModel):
     job_id: str
-    score: int = Field(ge=0, le=100)
+    score: int = Field(ge=0, le=100, strict=True)
     reason: str = Field(min_length=1, max_length=1200)
     missing_skills: list[str] = Field(default_factory=list, max_length=30)
     improvements: list[str] = Field(default_factory=list, max_length=5)
@@ -46,6 +47,13 @@ class AIResumeMatcher:
 
     def close(self) -> None:
         self.client.close()
+
+    def cache_key(self, job: Job) -> str:
+        material = "|".join([
+            self.provider, self.model, self.resume_text, job.identity, job.title,
+            job.location, job.description,
+        ])
+        return sha256(material.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
