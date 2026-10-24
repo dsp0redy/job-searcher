@@ -143,3 +143,35 @@ def test_fetch_obeys_detail_request_cap_and_keeps_listing_date(monkeypatch: pyte
     assert len(jobs) == 1
     assert jobs[0].description == ""
     assert jobs[0].posted_at is not None
+
+def test_start_date_is_not_used_as_posting_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = WorkdayAdapter(
+        ["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"],
+        max_pages=1,
+    )
+    listing = {
+        "jobPostings": [{
+            "externalPath": "/job/Software-Engineer_REQ-123",
+            "title": "C++ Software Engineer",
+            "locationsText": "Bengaluru, India",
+        }],
+        "total": 1,
+    }
+    detail = {
+        "jobPostingInfo": {
+            "jobReqId": "REQ-123",
+            "jobDescription": "C++ systems role",
+            "startDate": "2026-10-24T00:00:00Z",
+            "location": "Bengaluru",
+        }
+    }
+    monkeypatch.setattr(adapter.client, "post", lambda *args, **kwargs: FakeResponse(listing))
+    monkeypatch.setattr(adapter.client, "get", lambda *args, **kwargs: FakeResponse(detail))
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+
+    assert len(jobs) == 1
+    assert jobs[0].posted_at is None
+
