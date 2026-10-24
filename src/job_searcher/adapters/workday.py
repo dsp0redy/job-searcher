@@ -92,12 +92,11 @@ class WorkdayAdapter(JobSource):
             details_fetched = 0
             for page in range(self.max_pages):
                 try:
-                    response = self.client.post(
+                    payload = self.request_json(
+                        "POST",
                         endpoint,
-                        json={"appliedFacets": {}, "limit": 20, "offset": page * 20, "searchText": ""},
+                        json_body={"appliedFacets": {}, "limit": 20, "offset": page * 20, "searchText": ""},
                     )
-                    response.raise_for_status()
-                    payload = response.json()
                     if not isinstance(payload, dict) or not isinstance(payload.get("jobPostings"), list):
                         raise ValueError("Unexpected Workday job-search response schema")
                     site_succeeded = True
@@ -127,10 +126,8 @@ class WorkdayAdapter(JobSource):
                     try:
                         if details_fetched >= self.detail_limit:
                             raise RuntimeError("Per-site detail request limit reached")
-                        detail_response = self.client.get(detail_url)
                         details_fetched += 1
-                        detail_response.raise_for_status()
-                        detail = detail_response.json()
+                        detail = self.request_json("GET", detail_url)
                         info = detail.get("jobPostingInfo", {}) if isinstance(detail, dict) else {}
                         if isinstance(info, dict):
                             source_id = str(info.get("jobReqId") or info.get("jobRequisitionId") or source_id)
