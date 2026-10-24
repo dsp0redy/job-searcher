@@ -7,6 +7,7 @@ from .ai_matching import load_resume_text
 from .config import AppConfig
 from .orchestrator import SearchOrchestrator
 from .storage import JobStore
+from .reporting import prune_old_reports
 
 
 def main() -> None:
@@ -55,7 +56,9 @@ def main() -> None:
         return
     if args.prune_now:
         store = JobStore(config.storage.path)
-        print(json.dumps({"retention": store.prune_old_data(config.storage.retention_days)}, indent=2))
+        retention = store.prune_old_data(config.storage.retention_days)
+        retention["reports"] = prune_old_reports(args.output_dir, config.search.report_retention_days)
+        print(json.dumps({"retention": retention}, indent=2))
         return
     if args.job_identity:
         store = JobStore(config.storage.path)
