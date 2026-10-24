@@ -71,7 +71,13 @@ class AppConfig(BaseModel):
         # Environment variables override provider selection without requiring source edits.
         provider_override = os.getenv("AI_PROVIDER", "").strip()
         if provider_override:
-            data.setdefault("matching", {})["provider"] = provider_override.casefold()
+            matching = data.get("matching")
+            if matching is None:
+                matching = {}
+                data["matching"] = matching
+            if not isinstance(matching, dict):
+                raise ValueError("Configuration 'matching' must be a YAML mapping when AI_PROVIDER is set")
+            matching["provider"] = provider_override.casefold()
         return cls.model_validate(data)
 
     @staticmethod
