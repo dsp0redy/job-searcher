@@ -58,3 +58,53 @@ jobs:
           path: reports/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Open or update scan-health alert
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- job-searcher-scan-health-alert -->';
+            const title = '[Job Searcher] Scheduled scan needs attention';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100
+            });
+            const existing = issues.find(issue => !issue.pull_request && (issue.body || '').includes(marker));
+            const body = [
+              marker,
+              'The scheduled job search failed or reported no successful sources.',
+              '',
+              '- Workflow run: ' + context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId,
+              '- Trigger: ' + context.eventName,
+              '- Branch: ' + context.ref,
+              '',
+              'Review the run logs and uploaded report artifacts. Confirm source URLs, rate limits, provider credentials, and GitHub permissions before rerunning.',
+              '',
+              'This alert is updated in place to avoid creating one issue per failed run.'
+            ].join('\n');
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
+      - name: Resolve scan-health alert after a successful scan
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- job-searcher-scan-health-alert -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100
+            });
+            const existing = issues.find(issue => !issue.pull_request && (issue.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: 'closed',
+                body: (existing.body || '') + '\n\nResolved by successful workflow run: ' +
+                  context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId
+              });
+            }
