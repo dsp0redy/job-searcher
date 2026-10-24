@@ -498,3 +498,60 @@ def test_invalid_ai_token_usage_values_are_ignored(tmp_path, monkeypatch):
     monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", Matcher)
     summary = SearchOrchestrator(make_config(tmp_path, provider="gemini")).run(str(tmp_path / "reports"))
     assert summary["ai"]["token_usage"] == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+
+def test_too_senior_titles_are_excluded_before_scoring(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [make_job("1", "Principal C++ Engineer"), make_job("2", "C++ Engineer")])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_seniority"] == 1
+    assert summary["qualified_candidates"] == 1
+
+
+def test_applied_and_rejected_jobs_are_not_reported_again(tmp_path, monkeypatch):
+    jobs = [make_job("1"), make_job("2"), make_job("3")]
+    install_sources(monkeypatch, jobs)
+    config = make_config(tmp_path)
+    SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    from job_searcher.storage import JobStore
+
+    store = JobStore(config.storage.path)
+    store.set_review_status(jobs[0].identity, "rejected")
+    store.set_review_status(jobs[1].identity, "applied")
+    store.set_review_status(jobs[2].identity, "saved")  # saved jobs stay visible
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_review"] == 2
+    assert summary["qualified_candidates"] == 1
+
+
+def test_cached_ai_results_do_not_consume_the_paid_scan_budget(tmp_path, monkeypatch):
+    jobs = [make_job(str(i), "C++ Engineer") for i in range(1, 4)]
+    install_sources(monkeypatch, jobs)
+    calls: list[list[str]] = []
+
+    class Matcher:
+        def __init__(self, provider, timeout): pass
+        def cache_key(self, item): return item.identity
+        def match_batch(self, batch):
+            calls.append([item.source_id for item in batch])
+            return {item.identity: MatchResult(job_id=item.identity, score=80, reason="Evidence") for item in batch}
+        def close(self): pass
+
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", Matcher)
+    config = make_config(tmp_path, provider="gemini", max_ai_jobs_per_scan=1, max_jobs_per_ai_batch=5)
+    for _ in range(3):  # one new job is evaluated per run; earlier ones come from cache
+        summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert len(calls) == 3 and all(len(call) == 1 for call in calls)
+    assert len({call[0] for call in calls}) == 3  # never re-pays for the same job
+    assert summary["ai"]["cached"] == 2 and summary["ai"]["deferred_by_scan_limit"] == 0
+
+
+def test_ai_initialization_failure_is_flagged_even_with_no_candidates(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [])
+
+    def broken(provider, timeout):
+        raise ValueError("no key")
+
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", broken)
+    summary = SearchOrchestrator(make_config(tmp_path, provider="gemini")).run(str(tmp_path / "reports"))
+    assert summary["qualified_candidates"] == 0
+    assert summary["run_status"] == "partial_ai_failure"

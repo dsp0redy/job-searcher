@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .adapters.base import JobSource
 from .models import Job
@@ -48,6 +48,15 @@ def load_resume_text(resume_text: str = "", resume_file: str = "") -> str:
 class MatchResult(BaseModel):
     job_id: str
     score: int = Field(ge=0, le=100, strict=True)
+
+    @field_validator("score", mode="before")
+    @classmethod
+    def _accept_whole_number_floats(cls, value: object) -> object:
+        """Models sometimes emit 85.0; accept it, but still reject 85.5, strings and bools."""
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+
     reason: str = Field(min_length=1, max_length=1200)
     missing_skills: list[str] = Field(default_factory=list, max_length=30)
     improvements: list[str] = Field(default_factory=list, max_length=5)
@@ -115,10 +124,10 @@ class AIResumeMatcher:
         cleaned = text.strip()
         try:
             payload = json.loads(cleaned)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as decode_error:
             start, end = cleaned.find("{"), cleaned.rfind("}")
             if start < 0 or end < start:
-                raise ValueError("AI response did not contain a JSON object")
+                raise ValueError("AI response did not contain a JSON object") from decode_error
             payload = json.loads(cleaned[start:end + 1])
         if not isinstance(payload, dict):
             raise ValueError("AI response must be a JSON object")
@@ -151,7 +160,7 @@ class AIResumeMatcher:
                     "AI provider request had a transient network error; retrying attempt %d/%d",
                     attempt + 2, max_attempts,
                 )
-            jitter = random.uniform(0.0, min(JobSource.RETRY_JITTER_SECONDS, delay * 0.1))
+            jitter = random.uniform(0.0, min(JobSource.RETRY_JITTER_SECONDS, delay * 0.1))  # noqa: S311
             time.sleep(min(delay + jitter, JobSource.MAX_RETRY_DELAY_SECONDS))
         raise RuntimeError("AI request retries exhausted")
 
@@ -190,7 +199,8 @@ class AIResumeMatcher:
         if self.provider == "gemini":
             response = self._post_with_retries(
                 f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
-                params={"key": self.api_key},
+                # Header, not ?key=..., so the secret never appears in request URLs/logs.
+                headers={"x-goog-api-key": self.api_key},
                 json={
                     "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                     "generationConfig": {"responseMimeType": "application/json", "temperature": 0.1},

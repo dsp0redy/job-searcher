@@ -200,3 +200,18 @@ def test_cli_dry_run_disables_ai_and_issue_creation(monkeypatch, tmp_path, capsy
     monkeypatch.setattr(cli, "SearchOrchestrator", FakeOrchestrator)
     cli.main()
     assert json.loads(capsys.readouterr().out)["run_status"] == "success"
+
+
+def test_cli_silences_httpx_request_logging_unless_verbose(monkeypatch, capsys):
+    import logging
+
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: FakeConfig())
+    httpx_logger = logging.getLogger("httpx")
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--check-config"])
+    cli.main()
+    assert httpx_logger.level == logging.WARNING  # URLs (and any secrets in them) stay out of logs
+    httpx_logger.setLevel(logging.NOTSET)
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--verbose", "--check-config"])
+    cli.main()
+    assert httpx_logger.level == logging.NOTSET
+    capsys.readouterr()

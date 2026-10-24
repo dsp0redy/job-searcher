@@ -80,3 +80,18 @@ CI runs Ruff, strict mypy, tests, and the 100% statement/branch coverage gate. A
 5. Use uploaded artifacts to inspect candidate locations and original job URLs. Do not broaden the city allowlist just to increase result count without reviewing false positives.
 
 Unit/property tests use mocked network responses and temporary databases. They do not validate live employer endpoints, real credentials, actual GitHub permissions, or AI-provider billing. A controlled manual scan is still required for final production verification.
+
+
+## Operational notes
+
+- **Scheduled workflows pause after 60 days without repository activity** on public repos.
+  If scans stop, re-enable the workflow in the Actions tab (or push any commit).
+- **Review queue:** `job-searcher --job-identity <id> --review-status rejected|applied|saved|stale`.
+  `rejected` and `applied` jobs are excluded from later reports and issues. Reviewed jobs are
+  never pruned by retention.
+- **Workday coverage:** `search.workday_search_terms` narrows the otherwise-unfiltered listing
+  (use your target cities); `search.workday_detail_limit` controls how many postings per site get
+  a full description, which drives skill and experience scoring.
+- **Seniority filter:** `profile.exclude_title_keywords` skips titles such as "Principal" or "Director".
+- **Issue de-duplication** reads up to 5,000 existing issues. Beyond that it refuses to publish
+  (reported as a notification failure) rather than risk duplicates.

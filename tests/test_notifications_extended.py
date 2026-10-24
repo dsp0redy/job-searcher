@@ -143,14 +143,52 @@ def test_publish_rejects_non_object_create_response(monkeypatch):
     finally:
         publisher.close()
 
-def test_existing_issue_loader_caps_scan_at_ten_pages(monkeypatch):
+def test_existing_issue_loader_fails_closed_when_history_exceeds_cap(monkeypatch):
+    import pytest
+    from job_searcher.notifications import MAX_ISSUE_PAGES
+
     publisher = GitHubIssuePublisher("owner/repo", "token")
     calls = []
     monkeypatch.setattr(publisher.client, "get", lambda url, params: (calls.append(params["page"]), FakeResponse([{"body": "none"}] * 100))[1])
     try:
-        publisher._load_existing_issues()
-        assert calls == list(range(1, 11))
-        assert publisher._issues_loaded is True
+        with pytest.raises(ValueError, match="cannot dedupe safely"):
+            publisher._load_existing_issues()
+        assert calls == list(range(1, MAX_ISSUE_PAGES + 1))
+        assert publisher._issues_loaded is False
+        with pytest.raises(ValueError):  # cached failure: no further API calls
+            publisher._load_existing_issues()
+        assert len(calls) == MAX_ISSUE_PAGES
+        job = Job(source="lever", source_id="1", company="Acme", title="Engineer", url="https://example.com/1")
+        posted = []
+        monkeypatch.setattr(publisher.client, "post", lambda *a, **k: posted.append(1))
+        assert publisher.publish(job, 90, "r", [])["status"] == "failed"
+        assert posted == []  # never creates a possible duplicate
     finally:
         publisher.close()
 
+
+def test_issue_body_neutralizes_untrusted_markdown_and_mentions(monkeypatch):
+    publisher = GitHubIssuePublisher("owner/repo", "token")
+    publisher._issues_loaded = True
+    captured = {}
+
+    def post(url, json):
+        captured.update(json)
+        return FakeResponse({"html_url": "https://github.com/o/r/issues/1", "number": 1})
+
+    monkeypatch.setattr(publisher.client, "post", post)
+    job = Job(source="lever", source_id="1", company="Ac@me", title="Eng [click](http://evil)\nline2",
+              url="https://example.com/1")
+    try:
+        result = publisher.publish(job, 90, "ping @octocat <img src=x>", ["C++"], ["<script>"], ["see #1"])
+    finally:
+        publisher.close()
+    assert result["status"] == "created"
+    body = captured["body"]
+    assert "@octocat" not in body and "Ac@me" not in body
+    import re
+
+    visible = re.sub(r"<!-- job-searcher:[a-f0-9]{64} -->", "", body)  # the genuine marker
+    assert not re.search(r"(?<!\\)[<>\[\]]", visible)  # every markup char is backslash-escaped
+    assert "\n" not in captured["title"]
+    assert body.rstrip().endswith("-->")  # only the genuine dedupe marker remains

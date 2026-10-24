@@ -9,8 +9,9 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from html import unescape
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
-from typing import cast
+from typing import Any, cast
 
 from pydantic import HttpUrl
 
@@ -25,11 +26,23 @@ _RELATIVE_POSTED = re.compile(r"(today|yesterday|(?:posted\s*)?(\d+)\+?\s*days?\
 class WorkdayAdapter(JobSource):
     name = "workday"
 
-    def __init__(self, career_urls: list[str], timeout: float = 20, max_pages: int = 5, detail_limit: int = 12) -> None:
+    def __init__(
+        self,
+        career_urls: list[str],
+        timeout: float = 20,
+        max_pages: int = 5,
+        detail_limit: int = 12,
+        search_terms: list[str] | None = None,
+        max_workers: int = 1,
+    ) -> None:
         super().__init__(timeout)
         self.career_urls = career_urls
         self.max_pages = max_pages
         self.detail_limit = max(0, detail_limit)
+        # Workday's listing endpoint is unfiltered by default and returns the newest
+        # postings worldwide; search terms (e.g. city names) narrow it server-side.
+        self.search_terms = [t.strip() for t in (search_terms or []) if t.strip()] or [""]
+        self.max_workers = max(1, max_workers)
         self.site_status: dict[str, str] = {}
 
     @staticmethod
@@ -46,6 +59,20 @@ class WorkdayAdapter(JobSource):
             raise ValueError("Workday career URL must include a site slug")
         tenant = host.split(".", 1)[0]
         return host, tenant, parts[0]
+
+    @staticmethod
+    def _stable_source_id(item: dict[str, Any], path: str) -> str:
+        """Return an ID that depends only on the listing row, never on whether a detail
+        request happened to be made, so a posting keeps one identity across scans."""
+        listed = str(item.get("jobReqId") or item.get("jobRequisitionId") or "").strip()
+        if listed:
+            return listed
+        last_segment = path.rstrip("/").rsplit("/", 1)[-1]
+        if "_" in last_segment:
+            trailing = last_segment.rsplit("_", 1)[-1]
+            if any(char.isdigit() for char in trailing):
+                return trailing
+        return path
 
     @staticmethod
     def _plain_text(value: object) -> str:
@@ -75,27 +102,40 @@ class WorkdayAdapter(JobSource):
             return None
 
     def fetch(self) -> list[Job]:
+        if not self.career_urls:
+            return []
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(self.career_urls))) as pool:
+            results = list(pool.map(self._fetch_site, self.career_urls))
+        jobs: list[Job] = []
+        seen: set[str] = set()
+        for site_jobs, status_key, status in results:
+            self.site_status[status_key] = status
+            for job in site_jobs:
+                if job.identity not in seen:
+                    seen.add(job.identity)
+                    jobs.append(job)
+        return jobs
+
+    def _fetch_site(self, career_url: str) -> tuple[list[Job], str, str]:
+        try:
+            host, tenant, site = self.parse_career_url(career_url)
+        except ValueError as exc:
+            LOG.warning("Skipping invalid Workday URL %r: %s", career_url, exc)
+            return [], career_url, f"failed: invalid URL ({type(exc).__name__})"
+
         jobs: list[Job] = []
         seen: set[tuple[str, str]] = set()
-        for career_url in self.career_urls:
-            try:
-                host, tenant, site = self.parse_career_url(career_url)
-            except ValueError as exc:
-                self.site_status[career_url] = f"failed: invalid URL ({type(exc).__name__})"
-                LOG.warning("Skipping invalid Workday URL %r: %s", career_url, exc)
-                continue
-
-            site_succeeded = False
-            site_start_count = len(jobs)
-            company = tenant.replace("-", " ").replace("_", " ").title()
-            endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
-            details_fetched = 0
+        site_succeeded = False
+        company = tenant.replace("-", " ").replace("_", " ").title()
+        endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+        details_fetched = 0
+        for term in self.search_terms:
             for page in range(self.max_pages):
                 try:
                     payload = self.request_json(
                         "POST",
                         endpoint,
-                        json_body={"appliedFacets": {}, "limit": 20, "offset": page * 20, "searchText": ""},
+                        json_body={"appliedFacets": {}, "limit": 20, "offset": page * 20, "searchText": term},
                     )
                     if not isinstance(payload, dict) or not isinstance(payload.get("jobPostings"), list):
                         raise ValueError("Unexpected Workday job-search response schema")
@@ -118,7 +158,7 @@ class WorkdayAdapter(JobSource):
                     if identity in seen:
                         continue
                     seen.add(identity)
-                    source_id = str(item.get("jobReqId") or item.get("jobRequisitionId") or path).strip()
+                    source_id = self._stable_source_id(item, path)
                     detail_url = f"https://{host}/wday/cxs/{tenant}/{site}{path}"
                     description = ""
                     posted_at = self._parse_posted_at(item.get("postedOn"))
@@ -130,7 +170,6 @@ class WorkdayAdapter(JobSource):
                         detail = self.request_json("GET", detail_url)
                         info = detail.get("jobPostingInfo", {}) if isinstance(detail, dict) else {}
                         if isinstance(info, dict):
-                            source_id = str(info.get("jobReqId") or info.get("jobRequisitionId") or source_id)
                             description = self._plain_text(info.get("jobDescription"))
                             detail_posted_at = self._parse_posted_at(info.get("postedOn"))
                             if detail_posted_at is not None:
@@ -164,9 +203,8 @@ class WorkdayAdapter(JobSource):
                 total = payload.get("total")
                 if len(postings) < 20 or (isinstance(total, int) and (page + 1) * 20 >= total):
                     break
-            count = len(jobs) - site_start_count
-            self.site_status[f"{tenant}/{site}"] = (
-                f"ok: {count} postings" if site_succeeded
-                else "failed: no successful job-search response"
-            )
-        return jobs
+        status = (
+            f"ok: {len(jobs)} postings" if site_succeeded
+            else "failed: no successful job-search response"
+        )
+        return jobs, f"{tenant}/{site}", status

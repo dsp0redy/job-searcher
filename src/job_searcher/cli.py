@@ -27,6 +27,11 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx logs full request URLs at INFO; keep that noise (and any URL-borne secrets)
+    # out of logs unless the user explicitly asks for debug output.
+    if not args.verbose:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
     config = AppConfig.load(args.config)
     if args.dry_run:
         config.matching.provider = "none"

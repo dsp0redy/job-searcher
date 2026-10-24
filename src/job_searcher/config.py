@@ -13,6 +13,10 @@ class ProfileConfig(BaseModel):
     minimum_experience_years: float | None = Field(default=None, ge=0, le=80)
     maximum_experience_years: float | None = Field(default=None, ge=0, le=80)
     skills: list[str] = Field(default_factory=list)
+    # Titles containing any of these whole words/phrases are skipped as too senior.
+    exclude_title_keywords: list[str] = Field(default_factory=lambda: [
+        "principal", "staff", "distinguished", "director", "vice president", "vp", "head of", "fellow",
+    ])
 
     @model_validator(mode="after")
     def validate_experience_range(self) -> "ProfileConfig":
@@ -29,6 +33,9 @@ class SearchConfig(BaseModel):
     posted_within_days: int = Field(default=14, ge=0, le=3650)
     report_retention_days: int = Field(default=30, ge=1, le=3650)
     minimum_local_score: int = Field(default=2, ge=0, le=100)
+    workday_detail_limit: int = Field(default=12, ge=0, le=200)
+    # Server-side search terms for Workday listings (e.g. city names); empty = unfiltered.
+    workday_search_terms: list[str] = Field(default_factory=list)
 
 
 class StorageConfig(BaseModel):
