@@ -20,6 +20,31 @@ from .models import Job
 LOG = logging.getLogger(__name__)
 
 
+
+def load_resume_text(resume_text: str = "", resume_file: str = "") -> str:
+    """Load and validate resume text without initializing a provider or sending network requests."""
+    text = resume_text.strip()
+    if not text and resume_file.strip():
+        path = Path(resume_file.strip())
+        if not path.is_file():
+            raise ValueError(f"RESUME_FILE does not exist: {path}")
+        if path.suffix.casefold() == ".pdf":
+            from pypdf import PdfReader
+
+            text = "\\n".join(
+                page.extract_text() or "" for page in PdfReader(str(path)).pages
+            ).strip()
+        else:
+            text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise ValueError(
+            "AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions"
+        )
+    if len(text) < 80:
+        LOG.warning("Resume text is unusually short (%d characters); review extraction quality", len(text))
+    return text
+
+
 class MatchResult(BaseModel):
     job_id: str
     score: int = Field(ge=0, le=100, strict=True)
@@ -59,20 +84,7 @@ class AIResumeMatcher:
             local_hosts = {"localhost", "127.0.0.1", "::1"}
             if parsed_url.scheme != "https" and parsed_url.hostname not in local_hosts:
                 raise ValueError("AI_BASE_URL must use HTTPS unless it targets localhost")
-        self.resume_text = os.getenv("RESUME_TEXT", "").strip()
-        resume_file = os.getenv("RESUME_FILE", "").strip()
-        if not self.resume_text and resume_file:
-            path = Path(resume_file)
-            if not path.is_file():
-                raise ValueError(f"RESUME_FILE does not exist: {path}")
-            if path.suffix.casefold() == ".pdf":
-                from pypdf import PdfReader
-
-                self.resume_text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages).strip()
-            else:
-                self.resume_text = path.read_text(encoding="utf-8").strip()
-        if not self.resume_text:
-            raise ValueError("AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions")
+        self.resume_text = load_resume_text(os.getenv("RESUME_TEXT", ""), os.getenv("RESUME_FILE", ""))
         model_env = {
             "gemini": ("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             "claude": ("CLAUDE_MODEL", "claude-haiku-5-5"),
