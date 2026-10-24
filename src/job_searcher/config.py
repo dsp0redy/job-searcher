@@ -35,9 +35,10 @@ class StorageConfig(BaseModel):
 
 
 class MatchingConfig(BaseModel):
-    provider: str = "none"
+    provider: str = Field(default="none", pattern="^(none|gemini|claude)$")
     threshold: int = Field(default=65, ge=0, le=100)
     max_jobs_per_ai_batch: int = Field(default=8, ge=1, le=30)
+    max_ai_jobs_per_scan: int = Field(default=40, ge=1, le=200)
 
 
 class SourcesConfig(BaseModel):
