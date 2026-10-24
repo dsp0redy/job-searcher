@@ -190,7 +190,8 @@ class SearchOrchestrator:
                 "matching": provider if ai_matcher else "deterministic local scoring",
                 "ai": {
                     "enabled": ai_matcher is not None,
-                    "scored": len(ai_results),
+                    "scored": len(ai_results) - ai_cached,
+                    "matched_including_cache": len(ai_results),
                     "cached": ai_cached,
                     "failed": len(ai_failed),
                     "deferred_by_scan_limit": len(ai_deferred),
