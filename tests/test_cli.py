@@ -79,3 +79,26 @@ def test_cli_no_successful_sources_exits_nonzero(monkeypatch, capsys):
     with pytest.raises(SystemExit, match="No configured job sources"):
         cli.main()
     assert json.loads(capsys.readouterr().out) == summary
+
+
+
+def test_cli_resume_preview_is_local_and_does_not_run_scan(monkeypatch, capsys):
+    monkeypatch.setenv("RESUME_TEXT", "Experienced C++ and Linux engineer " * 8)
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--preview-resume"])
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: FakeConfig())
+    monkeypatch.setattr(cli, "SearchOrchestrator", lambda config: pytest.fail("scan should not run"))
+    cli.main()
+    result = json.loads(capsys.readouterr().out)
+    assert result["characters"] > 80
+    assert result["quality_warning"] is False
+    assert result["network_requests_made"] is False
+    assert result["truncated"] is True
+
+
+def test_cli_resume_preview_reports_missing_resume(monkeypatch, capsys):
+    monkeypatch.delenv("RESUME_TEXT", raising=False)
+    monkeypatch.delenv("RESUME_FILE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["job-searcher", "--preview-resume"])
+    monkeypatch.setattr(cli.AppConfig, "load", lambda path: FakeConfig())
+    with pytest.raises(SystemExit, match="RESUME_TEXT or RESUME_FILE"):
+        cli.main()
