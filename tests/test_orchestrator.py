@@ -314,3 +314,42 @@ def test_duplicate_postings_are_scored_once_but_raw_fetch_count_is_preserved(tmp
     with SearchOrchestrator(make_config(tmp_path)).store._connect() as db:
         assert db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
 
+def test_workday_site_status_is_included_in_summary(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [])
+    config = make_config(tmp_path)
+    config.sources.workday = ["https://example.myworkdayjobs.com/site"]
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["sources"]["workday"].startswith("ok: 0 postings")
+    assert summary["sources"]["workday:tenant/site"] == "ok: 0 postings"
+
+
+def test_candidates_below_local_threshold_are_not_reported(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [make_job()])
+    config = make_config(tmp_path)
+    config.search.minimum_local_score = 100
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["qualified_candidates"] == 0
+
+
+def test_cached_result_with_wrong_job_id_is_recomputed(tmp_path, monkeypatch):
+    job = make_job()
+    install_sources(monkeypatch, [job])
+    from job_searcher.storage import JobStore
+    JobStore(str(tmp_path / "state.sqlite3")).save_match(
+        "cache-" + job.identity, "gemini",
+        {"job_id": "different-but-valid", "score": 50, "reason": "other job"},
+    )
+    class Matcher:
+        calls = 0
+        def __init__(self, provider, timeout): pass
+        def cache_key(self, item): return "cache-" + item.identity
+        def match_batch(self, batch):
+            self.calls += 1
+            return {item.identity: MatchResult(job_id=item.identity, score=80, reason="correct") for item in batch}
+        def close(self): pass
+    matcher = Matcher("gemini", 10)
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", lambda *a, **kw: matcher)
+    summary = SearchOrchestrator(make_config(tmp_path, provider="gemini")).run(str(tmp_path / "reports"))
+    assert matcher.calls == 1
+    assert summary["ai"]["scored"] == 1
+
