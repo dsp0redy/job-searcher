@@ -14,7 +14,7 @@ from .config import AppConfig
 from .matching import extract_experience_range, is_allowed_location, is_experience_compatible, score_job
 from .models import Job
 from .notifications import GitHubIssuePublisher
-from .reporting import write_reports
+from .reporting import write_digest, write_reports
 from .storage import JobStore
 
 LOG = logging.getLogger(__name__)
@@ -242,7 +242,7 @@ class SearchOrchestrator:
 
                 rows.append(row)
 
-            paths = write_reports(output_dir, run_id, rows)
+            paths = (*write_reports(output_dir, run_id, rows), write_digest(output_dir, run_id, rows))
             input_rate = self.config.matching.input_cost_usd_per_million_tokens
             output_rate = self.config.matching.output_cost_usd_per_million_tokens
             estimated_ai_cost = (
