@@ -131,6 +131,8 @@ class AIResumeMatcher:
                 LOG.warning("AI provider request had a transient network error; retrying attempt %d/%d", attempt + 2, max_attempts)
             time.sleep(min(2 ** attempt, 8))
 
+        raise RuntimeError("AI request retries exhausted")
+
     def _request(self, prompt: str) -> str:
         if self.provider == "gemini":
             response = self._post_with_retries(
