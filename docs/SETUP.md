@@ -8,7 +8,7 @@
 4. Review `config.yml` (or `config.example.yml`) and verify target cities, role filters, and career-site URLs.
 5. Validate configuration without network calls: `job-searcher --config config.yml --check-config`.
 6. Preview extracted resume text locally before enabling AI: `job-searcher --config config.yml --preview-resume`. This makes no provider calls and prints the first 1,200 characters plus quality metadata.
-7. Run a scan: `job-searcher --config config.yml --output-dir reports`.
+7. Safely test current public sources first: `job-searcher --config config.yml --output-dir reports --dry-run`. This fetches live listings and writes reports while disabling AI calls and GitHub Issue creation. Use `job-searcher --config config.yml --output-dir reports` for a full scan only when you intend to run AI matching and notifications.
 8. Run quality checks: `ruff check src tests`, `mypy src/job_searcher`, and `pytest --cov=job_searcher --cov-report=term-missing`.
 
 ## Location and experience filters
@@ -65,7 +65,7 @@ Database retention is controlled by `storage.retention_days`; local report reten
 
 ## GitHub Actions, notifications, and alerts
 
-The scheduled workflow runs weekdays at 02:17 UTC and can be started manually from **Actions → Scheduled job scan → Run workflow**. It is serialized, has a 30-minute timeout, installs runtime dependencies, validates config, uploads reports even after scan failure, and uses only `contents: read` and `issues: write` permissions. If all sources fail or AI matching is incomplete, the CLI exits nonzero after preserving reports. The workflow opens or updates one scan-health alert issue and closes it after a successful run.
+The scheduled workflow runs weekdays at 02:17 UTC and can be started manually from **Actions → Scheduled job scan → Run workflow**. Manual dispatch defaults to `dry_run: true`, which checks live public source data and uploads reports without AI calls or job Issue creation. Set `dry_run: false` only when intentionally authorizing a full scan, which can spend AI tokens and create real Issues. Scheduled weekday runs continue to use the configured AI and notification settings. The workflow is serialized, has a 30-minute timeout, installs runtime dependencies, validates config, uploads reports even after scan failure, and uses only `contents: read` and `issues: write` permissions. If all sources fail or AI matching is incomplete, the CLI exits nonzero after preserving reports. The workflow opens or updates one scan-health alert issue and closes it after a successful run.
 
 The checked-in config enables job Issue notifications when the final score reaches `matching.threshold`. The workflow provides `GITHUB_TOKEN` and `GITHUB_REPOSITORY` automatically. Existing job issues use a stable hidden marker, but GitHub does not offer atomic create-if-absent semantics, so independent concurrent creators can still race.
 
