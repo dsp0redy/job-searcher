@@ -182,6 +182,8 @@ def test_orchestrator_marks_exceptional_run_failed_and_closes_ai(tmp_path, monke
     closed = []
     class Matcher:
         def __init__(self, provider, timeout): pass
+        def cache_key(self, item): return item.identity
+        def match_batch(self, batch): return {}
         def close(self): closed.append(True)
     monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", Matcher)
     monkeypatch.setattr(orchestrator_module, "write_reports",
