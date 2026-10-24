@@ -121,3 +121,25 @@ def test_existing_issue_loader_follows_full_pages(monkeypatch):
         assert calls == [1, 2]
     finally:
         publisher.close()
+
+def test_existing_issue_loader_skips_non_object_items(monkeypatch):
+    publisher = GitHubIssuePublisher("owner/repo", "token")
+    monkeypatch.setattr(publisher.client, "get", lambda *a, **kw: FakeResponse([None, "bad", {"body": "safe"}]))
+    try:
+        publisher._load_existing_issues()
+        assert publisher._existing == {}
+    finally:
+        publisher.close()
+
+
+def test_publish_rejects_non_object_create_response(monkeypatch):
+    publisher = GitHubIssuePublisher("owner/repo", "token")
+    monkeypatch.setattr(publisher.client, "get", lambda *a, **kw: FakeResponse([]))
+    monkeypatch.setattr(publisher.client, "post", lambda *a, **kw: FakeResponse(["unexpected"], method="POST"))
+    try:
+        assert publisher.publish(make_job(), 80, "fit", []) == {
+            "status": "failed", "error": "ValueError"
+        }
+    finally:
+        publisher.close()
+
