@@ -48,8 +48,21 @@ jobs:
         run: python -m pip install .
       - name: Validate configuration
         run: job-searcher --config config.yml --check-config
+      - name: Restore recent report snapshots for weekly digest
+        uses: actions/cache/restore@v4
+        with:
+          path: reports/
+          key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            job-search-reports-
       - name: Run job search
         run: job-searcher --config config.yml --output-dir reports
+      - name: Save recent report snapshots
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: reports/
+          key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload reports (including on failure)
         if: always()
         uses: actions/upload-artifact@v4
