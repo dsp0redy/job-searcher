@@ -5,11 +5,14 @@ A Python job-discovery tool tailored for C++ / Linux / embedded systems roles. I
 ## Current capabilities
 
 - **Workday, Greenhouse, and Lever adapters** using public career-site endpoints. Workday support covers compatible `*.myworkdayjobs.com` sites, not every employer's careers platform.
-- **Strict location filtering** before AI matching or issue creation. The checked-in profile allows Bengaluru/Bangalore and Hyderabad only; country-only, remote-only, and unrelated-city listings are excluded.\n- **Experience-aware matching** extracts explicit years-of-experience requirements and excludes requirements incompatible with the configured 2–5 year profile. Unknown requirements are not guessed.\n- **Local relevance scoring** using configured title, location, and skill evidence. The score is a keyword heuristic, not an ATS score or probability of getting an interview.
+- **Strict location filtering** before AI matching or issue creation. The checked-in profile allows Bengaluru/Bangalore and Hyderabad only; country-only, remote-only, and unrelated-city listings are excluded.
+- **Experience-aware matching** extracts explicit years-of-experience requirements and excludes requirements incompatible with the configured 2–5 year profile. Unknown requirements are not guessed.
+- **Local relevance scoring** using configured title, location, and skill evidence. The score is a keyword heuristic, not an ATS score or probability of getting an interview.
 - **SQLite persistence** with stable source/company/requisition identity, a match cache table, and scan-run history.
 - **CSV, JSON, Markdown, and employer-grouped digest reports** uploaded as a GitHub Actions artifact, with stable job identities for local review tracking.
 - **Optional GitHub Issues notifications** for jobs at or above the configured score threshold. Issues include a stable hidden marker so subsequent runs can avoid creating a second issue for the same job.
-- **Operational hardening** with bounded retries, `Retry-After`, per-host pacing and jitter, scan-health metrics/alerts, local review statuses, database/report retention, SQLite backup, dependency audits, and weekly Dependabot updates.\n- **CI** with Ruff, strict mypy checks, deterministic end-to-end tests, property-based fuzzing, and a 100% line-and-branch coverage gate; scheduled scans run on weekdays.
+- **Operational hardening** with bounded retries, `Retry-After`, per-host pacing and jitter, scan-health metrics/alerts, local review statuses, database/report retention, SQLite backup, dependency audits, and weekly Dependabot updates.
+- **CI** with Ruff, strict mypy checks, deterministic end-to-end tests, property-based fuzzing, and a 100% line-and-branch coverage gate; scheduled scans run on weekdays.
 
 Optional batch-based AI resume matching supports **Gemini**, **Claude**, and any **OpenAI-compatible API endpoint** (including Groq- and OpenRouter-compatible APIs). Local keyword scoring remains the prefilter; AI scoring runs only for the highest-ranked candidates, with a configurable per-scan cap and SQLite caching keyed by job, resume, provider, endpoint, and model. Leave `matching.provider: none` for local-only mode.
 
@@ -71,7 +74,10 @@ An issue is considered only when the local score reaches `matching.threshold` (6
 
 Edit `config.yml`:
 
-- `profile.titles`, `profile.locations`, and `profile.skills` define relevance evidence. `profile.locations` is a hard allowlist, not just a scoring hint.\n- `profile.minimum_experience_years` and `profile.maximum_experience_years` constrain explicit role requirements.\n- `matching.input_cost_usd_per_million_tokens` and `matching.output_cost_usd_per_million_tokens` optionally enable a cost estimate; no provider pricing is assumed.\n- `storage.retention_days` and `search.report_retention_days` control local retention.
+- `profile.titles`, `profile.locations`, and `profile.skills` define relevance evidence. `profile.locations` is a hard allowlist, not just a scoring hint.
+- `profile.minimum_experience_years` and `profile.maximum_experience_years` constrain explicit role requirements.
+- `matching.input_cost_usd_per_million_tokens` and `matching.output_cost_usd_per_million_tokens` optionally enable a cost estimate; no provider pricing is assumed.
+- `storage.retention_days` and `search.report_retention_days` control local retention.
 - `search.posted_within_days` excludes postings with a known older timestamp. If a source does not expose a parseable date, the posting is retained rather than silently discarded.
 - `search.max_pages_per_source` limits listing pages per configured source/site.
 - `matching.threshold` controls issue eligibility; it does not control whether a posting appears in reports.
