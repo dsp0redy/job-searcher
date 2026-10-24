@@ -73,7 +73,7 @@ def test_get_json_retries_rate_limit_then_succeeds(monkeypatch):
     try:
         assert source.get_json("https://example.com/jobs") == {"ok": True}
         assert calls == 2
-        assert delays == [0.0]
+        assert 0.0 in delays  # Retry-After: 0 adds no retry backoff; host pacing may also wait.
     finally:
         source.close()
 
@@ -163,3 +163,28 @@ def test_get_json_defensive_guard_when_attempt_count_is_zero():
             source.get_json("https://example.com/jobs")
     finally:
         source.close()
+
+
+
+def test_host_pacing_ignores_urls_without_hosts(monkeypatch):
+    from job_searcher.adapters import base as base_module
+
+    monkeypatch.setattr(base_module, "_HOST_NEXT_REQUEST", {})
+    monkeypatch.setattr(base_module.time, "sleep", lambda _: None)
+    JobSource._wait_for_host("/relative/path")
+    assert base_module._HOST_NEXT_REQUEST == {}
+
+
+def test_host_pacing_records_host_and_waits_on_following_request(monkeypatch):
+    from job_searcher.adapters import base as base_module
+
+    now_values = iter([100.0, 100.1])
+    waits = []
+    monkeypatch.setattr(base_module, "_HOST_NEXT_REQUEST", {})
+    monkeypatch.setattr(base_module.time, "monotonic", lambda: next(now_values))
+    monkeypatch.setattr(base_module.time, "sleep", waits.append)
+    JobSource._wait_for_host("https://example.test/jobs")
+    JobSource._wait_for_host("https://example.test/other")
+    assert len(waits) == 1
+    assert waits[0] > 0
+    assert "example.test" in base_module._HOST_NEXT_REQUEST
