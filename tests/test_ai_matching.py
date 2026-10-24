@@ -447,3 +447,9 @@ def test_retryable_server_error_raises_after_final_attempt(monkeypatch):
     finally:
         matcher.close()
 
+def test_compatible_provider_requires_model(monkeypatch):
+    configure_ai(monkeypatch)
+    monkeypatch.setenv("AI_MODEL", " ")
+    with pytest.raises(ValueError, match="AI_MODEL"):
+        AIResumeMatcher("openai_compatible")
+
