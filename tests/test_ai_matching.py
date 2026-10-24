@@ -127,3 +127,55 @@ def test_post_retries_transient_timeout(monkeypatch: pytest.MonkeyPatch) -> None
         assert calls == 2
     finally:
         matcher.close()
+
+
+
+
+def test_openai_compatible_provider_requires_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.setenv("AI_MODEL", "test-model")
+    monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
+    with pytest.raises(ValueError, match="AI_BASE_URL"):
+        AIResumeMatcher("openai_compatible")
+
+
+def test_openai_compatible_provider_uses_configured_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.setenv("AI_BASE_URL", "https://api.example.com/v1/")
+    monkeypatch.setenv("AI_MODEL", "example-model")
+    monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
+    matcher = AIResumeMatcher("openai_compatible")
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(url: str, **kwargs: object) -> httpx.Response:
+        calls.append((url, kwargs))
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"matches": []}'}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(matcher.client, "post", fake_post)
+    try:
+        assert matcher._request("test prompt") == '{"matches": []}'
+        assert calls[0][0] == "https://api.example.com/v1/chat/completions"
+        assert calls[0][1]["headers"]["Authorization"] == "Bearer test-key"
+        assert calls[0][1]["json"]["model"] == "example-model"
+    finally:
+        matcher.close()
+
+
+def test_openai_compatible_provider_requires_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.setenv("AI_BASE_URL", "https://api.example.com/v1")
+    monkeypatch.setenv("AI_MODEL", "example-model")
+    monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
+    with pytest.raises(ValueError, match="AI_API_KEY"):
+        AIResumeMatcher("openai_compatible")
