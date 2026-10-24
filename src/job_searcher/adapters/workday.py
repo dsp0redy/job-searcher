@@ -27,6 +27,7 @@ class WorkdayAdapter(JobSource):
         self.career_urls = career_urls
         self.max_pages = max_pages
         self.detail_limit = max(0, detail_limit)
+        self.site_status: dict[str, str] = {}
 
     @staticmethod
     def parse_career_url(url: str) -> tuple[str, str, str]:
@@ -73,9 +74,12 @@ class WorkdayAdapter(JobSource):
             try:
                 host, tenant, site = self.parse_career_url(career_url)
             except ValueError as exc:
+                self.site_status[career_url] = f"failed: invalid URL ({type(exc).__name__})"
                 LOG.warning("Skipping invalid Workday URL %r: %s", career_url, exc)
                 continue
 
+            site_succeeded = False
+            site_start_count = len(jobs)
             company = tenant.replace("-", " ").replace("_", " ").title()
             endpoint = f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
             details_fetched = 0
@@ -89,6 +93,7 @@ class WorkdayAdapter(JobSource):
                     payload = response.json()
                     if not isinstance(payload, dict) or not isinstance(payload.get("jobPostings"), list):
                         raise ValueError("Unexpected Workday job-search response schema")
+                    site_succeeded = True
                 except Exception as exc:
                     LOG.warning("Workday site %s failed on page %d (%s)", tenant, page + 1, type(exc).__name__)
                     break
@@ -157,4 +162,9 @@ class WorkdayAdapter(JobSource):
                 total = payload.get("total")
                 if len(postings) < 20 or (isinstance(total, int) and (page + 1) * 20 >= total):
                     break
+            count = len(jobs) - site_start_count
+            self.site_status[tenant] = (
+                f"ok: {count} postings" if site_succeeded
+                else "failed: no successful job-search response"
+            )
         return jobs
