@@ -83,9 +83,14 @@ class JobSource(ABC):
             self._wait_for_host(url)
             try:
                 if method.upper() == "GET":
-                    response = self.client.get(url, params=params)
+                    response = self.client.get(url, params=params) if params is not None else self.client.get(url)
                 else:
-                    response = self.client.post(url, params=params, json=json_body)
+                    request_kwargs: dict[str, object] = {}
+                    if params is not None:
+                        request_kwargs["params"] = params
+                    if json_body is not None:
+                        request_kwargs["json"] = json_body
+                    response = self.client.post(url, **request_kwargs)
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as exc:
