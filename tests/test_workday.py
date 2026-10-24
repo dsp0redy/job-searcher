@@ -361,6 +361,7 @@ def test_fetch_handles_non_integer_total_after_full_page(monkeypatch: pytest.Mon
 def test_fetch_logs_and_falls_back_on_http_detail_failure(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
     import httpx
 
+    caplog.set_level("INFO")
     adapter = WorkdayAdapter(["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"], max_pages=1)
     listing = {"jobPostings": [{
         "externalPath": "/job/Engineer_REQ-1", "title": "Engineer",
