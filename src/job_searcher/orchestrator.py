@@ -207,7 +207,11 @@ class SearchOrchestrator:
                 },
                 "reports": [str(path) for path in paths],
             }
-            status = "success" if any(value.startswith("ok:") for value in source_status.values()) else "no_sources_succeeded"
+            sources_succeeded = any(value.startswith("ok:") for value in source_status.values())
+            status = "success" if sources_succeeded else "no_sources_succeeded"
+            if sources_succeeded and ai_failed:
+                status = "partial_ai_failure"
+            summary["run_status"] = status
             self.store.finish_run(run_id, status, summary)
             return summary
         except Exception as exc:
