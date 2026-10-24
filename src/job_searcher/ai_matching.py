@@ -5,7 +5,6 @@ import json
 import logging
 from hashlib import sha256
 import os
-import re
 from typing import Any
 
 import httpx
