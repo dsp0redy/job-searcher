@@ -211,6 +211,7 @@ class AIResumeMatcher:
                 },
             )
             data = response.json()
+            self._capture_usage(data)
             return "\n".join(
                 str(block.get("text", ""))
                 for block in data.get("content", [])
