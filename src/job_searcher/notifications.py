@@ -17,7 +17,8 @@ class GitHubIssuePublisher:
     """Publish one issue per job identity when explicitly enabled in configuration."""
 
     def __init__(self, repository: str, token: str, timeout: float = 20) -> None:
-        if "/" not in repository or repository.startswith("/") or repository.endswith("/"):
+        parts = repository.split("/")
+        if len(parts) != 2 or not all(part.strip() for part in parts):
             raise ValueError("notifications.repository must be in owner/repository format")
         self.repository = repository
         self.client = httpx.Client(
