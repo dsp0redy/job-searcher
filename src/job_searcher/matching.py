@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from hashlib import sha256
-from typing import Any
+from typing import Any, cast
 
 from .config import ProfileConfig
 from .models import Job
@@ -53,26 +53,17 @@ def extract_experience_range(text: str) -> tuple[float | None, float | None]:
         return None, None
 
     minimum_match = re.search(
-        r"\b(?:at least|minimum(?: of)?|over|more than)\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b",
+        r"(?:(?:at least|minimum(?: of)?|over|more than)\s*)?(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b"
+        r"(?:\s+of)?\s+(?:relevant\s+)?experience\b|"
+        r"(?:at least|minimum(?: of)?|over|more than)\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b",
         text,
         re.IGNORECASE,
     )
     if minimum_match:
-        return float(minimum_match.group(1)), None
-
-    experience_match = re.search(
-        r"(?<!\d)(\d{1,2})\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:relevant\s+)?experience\b",
-        text,
-        re.IGNORECASE,
-    )
-    if experience_match:
-        return float(experience_match.group(1)), None
-
-    plus_match = re.search(
-        r"(?<!\d)(\d{1,2})\s*\+\s*(?:years?|yrs?)\b",
-        text,
-        re.IGNORECASE,
-    )
+        # The regex requires one numeric capture in either alternative.
+        value = cast(str, minimum_match.group(1) or minimum_match.group(2))
+        return float(value), None
+    plus_match = re.search(r"(?<!\d)(\d{1,2})\s*\+\s*(?:years?|yrs?)\b", text, re.IGNORECASE)
     if plus_match:
         return float(plus_match.group(1)), None
     return None, None

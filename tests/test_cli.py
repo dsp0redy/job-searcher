@@ -86,7 +86,7 @@ def test_cli_no_successful_sources_exits_nonzero(monkeypatch, capsys):
 
 
 def test_cli_resume_preview_is_local_and_does_not_run_scan(monkeypatch, capsys):
-    monkeypatch.setenv("RESUME_TEXT", "Experienced C++ and Linux engineer " * 50)
+    monkeypatch.setenv("RESUME_TEXT", "Experienced C++ and Linux engineer " * 80)
     monkeypatch.setattr(sys, "argv", ["job-searcher", "--preview-resume"])
     monkeypatch.setattr(cli.AppConfig, "load", lambda path: FakeConfig())
     monkeypatch.setattr(cli, "SearchOrchestrator", lambda config: pytest.fail("scan should not run"))
