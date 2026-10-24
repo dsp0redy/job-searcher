@@ -69,6 +69,15 @@ class SearchOrchestrator:
                         source_status[adapter.name] = "skipped: no Greenhouse boards configured"
                     elif adapter.name == "lever" and not getattr(adapter, "site_slugs", []):
                         source_status[adapter.name] = "skipped: no Lever sites configured"
+                    elif adapter.name in {"greenhouse", "lever"} and getattr(adapter, "site_status", {}):
+                        site_status = getattr(adapter, "site_status", {})
+                        successful_sites = sum(value.startswith("ok:") for value in site_status.values())
+                        source_status[adapter.name] = (
+                            f"ok: {len(found)} postings; {successful_sites}/{len(site_status)} sites responded"
+                            if successful_sites else f"failed: 0/{len(site_status)} sites responded"
+                        )
+                        for site, site_result in site_status.items():
+                            source_status[f"{adapter.name}:{site}"] = site_result
                     else:
                         source_status[adapter.name] = f"ok: {len(found)} postings"
                 except Exception as exc:
