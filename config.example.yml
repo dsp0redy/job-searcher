@@ -4,6 +4,8 @@ profile:
   minimum_experience_years: 2
   maximum_experience_years: 5
   skills: ["C++", "Linux", "C", "Python", "Docker", "Podman", "gRPC", "embedded", "firmware"]
+  # Titles containing any of these whole words are skipped as too senior.
+  exclude_title_keywords: ["principal", "staff", "distinguished", "director", "vice president", "vp", "head of", "fellow"]
 search:
   max_pages_per_source: 2
   request_timeout_seconds: 20
@@ -11,6 +13,11 @@ search:
   posted_within_days: 14
   report_retention_days: 30
   minimum_local_score: 2
+  # Workday listings are unfiltered by default (newest postings worldwide). Search terms
+  # narrow them server-side so relevant cities are not crowded out by max_pages_per_source.
+  workday_search_terms: ["Bengaluru", "Hyderabad"]
+  # Posting-detail requests per Workday site (descriptions drive skill/experience scoring).
+  workday_detail_limit: 25
 storage:
   path: "data/jobs.sqlite3"
   retention_days: 180

@@ -12,6 +12,20 @@ from .models import Job
 
 LOG = logging.getLogger(__name__)
 
+MAX_ISSUE_PAGES = 50  # 5,000 issues; beyond this we refuse to guess rather than duplicate
+_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]<>()#+!|~])")
+
+
+def sanitize_markdown(value: object, limit: int = 500) -> str:
+    """Neutralize untrusted text (job/AI-controlled) before placing it in an issue body.
+
+    Escapes Markdown/HTML syntax, defuses @mentions and #refs so a posting cannot ping
+    people, inject links/images, or forge the dedupe marker comment.
+    """
+    text = " ".join(str(value).split())[:limit]
+    text = _MD_SPECIAL.sub(r"\\\1", text)
+    return text.replace("@", "@\u200b")
+
 
 class GitHubIssuePublisher:
     """Publish one issue per job identity when explicitly enabled in configuration."""
@@ -33,6 +47,7 @@ class GitHubIssuePublisher:
         self.base_url = f"https://api.github.com/repos/{repository}"
         self._existing: dict[str, dict[str, Any]] = {}
         self._issues_loaded = False
+        self._load_error: str | None = None
 
     def close(self) -> None:
         self.client.close()
@@ -45,8 +60,10 @@ class GitHubIssuePublisher:
     def _load_existing_issues(self) -> None:
         if self._issues_loaded:
             return
+        if self._load_error:
+            raise ValueError(self._load_error)
         page = 1
-        while page <= 10:
+        while page <= MAX_ISSUE_PAGES:
             response = self.client.get(
                 f"{self.base_url}/issues",
                 params={"state": "all", "per_page": 100, "page": page},
@@ -66,9 +83,13 @@ class GitHubIssuePublisher:
                 if match:
                     self._existing[match.group(1)] = issue
             if len(issues) < 100:
-                break
+                self._issues_loaded = True
+                return
             page += 1
-        self._issues_loaded = True
+        # Every page was full: older issues may be unseen, so duplicate detection is
+        # unreliable. Fail closed instead of silently creating duplicate issues.
+        self._load_error = f"Issue history exceeds {MAX_ISSUE_PAGES * 100} issues; cannot dedupe safely"
+        raise ValueError(self._load_error)
 
     def publish(
         self,
@@ -91,25 +112,32 @@ class GitHubIssuePublisher:
                     "issue_number": existing.get("number"),
                 }
 
+            safe_skills = ", ".join(sanitize_markdown(x, 80) for x in skills)
+            safe_missing = ", ".join(sanitize_markdown(x, 80) for x in (missing_skills or []))
+            safe_steps = "\n".join(f"- {sanitize_markdown(item, 300)}" for item in (improvements or []))
             body = (
                 f"## Job match: {score}/100\n\n"
-                f"- **Company:** {job.company}\n"
-                f"- **Role:** {job.title}\n"
-                f"- **Location:** {job.location}\n"
-                f"- **Source:** {job.source}\n"
+                f"- **Company:** {sanitize_markdown(job.company, 200)}\n"
+                f"- **Role:** {sanitize_markdown(job.title, 300)}\n"
+                f"- **Location:** {sanitize_markdown(job.location, 300)}\n"
+                f"- **Source:** {sanitize_markdown(job.source, 40)}\n"
                 f"- **Apply:** {job.url}\n\n"
-                f"### Local matching evidence\n{reason}\n\n"
-                f"### Matched skills (local keyword evidence)\n{', '.join(skills) if skills else 'No configured skills matched.'}\n\n"
-                f"### Missing skills (AI mode)\n{', '.join(missing_skills or []) if missing_skills else 'None reported.'}\n\n"
+                f"### Local matching evidence\n{sanitize_markdown(reason, 1200)}\n\n"
+                f"### Matched skills (local keyword evidence)\n{safe_skills or 'No configured skills matched.'}\n\n"
+                f"### Missing skills (AI mode)\n{safe_missing or 'None reported.'}\n\n"
                 f"### Suggested next steps\n"
-                + ("\n".join(f"- {item}" for item in improvements) if improvements else "No suggestions generated.")
+                + (safe_steps or "No suggestions generated.")
                 + "\n\nThe score is a relevance estimate, not an interview probability. "
                 "Review the original job description and requirements before applying.\n\n"
                 + marker
             )
             response = self.client.post(
                 f"{self.base_url}/issues",
-                json={"title": f"[Job match {score}/100] {job.company} — {job.title}"[:250], "body": body},
+                json={
+                    "title": f"[Job match {score}/100] "
+                             f"{' '.join(job.company.split())} — {' '.join(job.title.split())}"[:250],
+                    "body": body,
+                },
             )
             response.raise_for_status()
             issue = response.json()

@@ -229,7 +229,7 @@ def test_fetch_skips_invalid_rows_and_deduplicates_paths(monkeypatch: pytest.Mon
     finally:
         adapter.close()
     assert len(jobs) == 1
-    assert jobs[0].source_id == "/job/Engineer_REQ-1"
+    assert jobs[0].source_id == "REQ-1"
     assert adapter.site_status["nvidia/NVIDIAExternalCareerSite"] == "ok: 1 postings"
 
 
@@ -401,3 +401,72 @@ def test_workday_adapter_matches_checked_in_search_and_detail_fixtures(monkeypat
     assert jobs[0].location == "Hyderabad, Telangana | Secunderabad"
     assert jobs[0].description == "Requires 3-5 years of Linux and C++ experience"
     assert adapter.site_status["example/External"] == "ok: 1 postings"
+
+
+def test_source_id_is_stable_whether_or_not_detail_is_fetched(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Identity must not depend on a posting's rank (detail_limit), or issues get duplicated."""
+    listing = {"jobPostings": [{"externalPath": "/job/Bengaluru/Engineer_JR-77", "title": "Engineer"}], "total": 1}
+    detail = {"jobPostingInfo": {"jobReqId": "DIFFERENT-ID", "jobDescription": "x", "location": "Bengaluru"}}
+    ids = []
+    for limit in (0, 5):
+        adapter = WorkdayAdapter(["https://nvidia.wd5.myworkdayjobs.com/Site"], max_pages=1, detail_limit=limit)
+        monkeypatch.setattr(adapter.client, "post", lambda *a, **kw: FakeResponse(listing))
+        monkeypatch.setattr(adapter.client, "get", lambda *a, **kw: FakeResponse(detail))
+        try:
+            ids.append(adapter.fetch()[0].identity)
+        finally:
+            adapter.close()
+    assert ids[0] == ids[1]
+
+
+@pytest.mark.parametrize(
+    ("item", "path", "expected"),
+    [
+        ({"jobReqId": "R1"}, "/job/x_Y9", "R1"),
+        ({}, "/job/Bengaluru/Engineer_JR-77", "JR-77"),
+        ({}, "/job/Bengaluru/Engineer_Senior", "/job/Bengaluru/Engineer_Senior"),
+        ({}, "/job/Bengaluru/Engineer", "/job/Bengaluru/Engineer"),
+    ],
+)
+def test_stable_source_id_rules(item, path, expected) -> None:
+    assert WorkdayAdapter._stable_source_id(item, path) == expected
+
+
+def test_search_terms_are_sent_and_overlapping_results_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = WorkdayAdapter(
+        ["https://nvidia.wd5.myworkdayjobs.com/Site"], max_pages=1, detail_limit=0,
+        search_terms=["Bengaluru", " ", "Hyderabad"],
+    )
+    sent = []
+
+    def post(url, **kwargs):
+        sent.append(kwargs["json"]["searchText"])
+        return FakeResponse({"jobPostings": [{"externalPath": "/job/Eng_REQ-9", "title": "Eng"}], "total": 1})
+
+    monkeypatch.setattr(adapter.client, "post", post)
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert sent == ["Bengaluru", "Hyderabad"]
+    assert len(jobs) == 1
+
+
+def test_fetch_with_no_sites_and_parallel_sites(monkeypatch: pytest.MonkeyPatch) -> None:
+    empty = WorkdayAdapter([])
+    try:
+        assert empty.fetch() == []
+    finally:
+        empty.close()
+    urls = [f"https://t{i}.wd5.myworkdayjobs.com/Site" for i in range(3)]
+    adapter = WorkdayAdapter(urls, max_pages=1, detail_limit=0, max_workers=3)
+    monkeypatch.setattr(
+        adapter.client, "post",
+        lambda url, **kw: FakeResponse({"jobPostings": [{"externalPath": "/job/E_REQ-1", "title": "E"}], "total": 1}),
+    )
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert len(jobs) == 3  # same path/ID on three tenants stays three distinct jobs
+    assert set(adapter.site_status) == {"t0/Site", "t1/Site", "t2/Site"}

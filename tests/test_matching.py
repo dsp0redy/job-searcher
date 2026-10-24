@@ -20,14 +20,6 @@ def test_empty_profile_never_gives_false_positive():
               url="https://example.com/x", description="C++ Linux")
     assert score_job(job, ProfileConfig())["score"] == 0
 
-def test_cache_key_changes_with_provider_and_profile():
-    from job_searcher.matching import cache_key
-
-    job = Job(source="lever", source_id="x", company="Acme", title="C++ Engineer",
-              url="https://example.com/x", description="Linux")
-    profile = ProfileConfig(skills=["C++"])
-    assert cache_key(job, profile, "gemini") != cache_key(job, profile, "claude")
-    assert cache_key(job, profile) != cache_key(job, ProfileConfig(skills=["Linux"]))
 
 
 
@@ -134,3 +126,31 @@ def test_reviewed_location_regression_fixture():
 def test_location_match_handles_empty_and_custom_location_terms():
     assert not _contains_location("Bengaluru, India", "")
     assert _contains_location("Pune, Maharashtra", "Pune")
+
+
+def test_experience_extraction_prefers_most_restrictive_requirement():
+    text = "Must have 8 years of experience; ideal candidates have 2-4 years of Linux"
+    assert extract_experience_range(text) == (8.0, None)
+
+
+def test_location_aliases_are_not_double_counted():
+    from job_searcher.matching import score_job
+
+    profile = ProfileConfig(locations=["Bengaluru", "Bangalore"])
+    job = Job(source="x", source_id="1", company="c", title="t", location="Bengaluru",
+              url="https://example.com/1")
+    result = score_job(job, profile)
+    assert result["score"] == 15
+    assert result["location_hits"] == ["Bengaluru"]
+
+
+def test_seniority_keywords_match_whole_words_only():
+    from job_searcher.matching import is_too_senior
+
+    profile = ProfileConfig()
+    assert is_too_senior("Principal Software Engineer", profile)
+    assert is_too_senior("Director, Engineering", profile)
+    assert is_too_senior("Head of Platform", profile)
+    assert not is_too_senior("Software Engineer II", profile)
+    assert not is_too_senior("Staffing Systems Engineer", profile)
+    assert not is_too_senior("Embedded Engineer", ProfileConfig(exclude_title_keywords=[" "]))

@@ -384,7 +384,8 @@ def test_provider_request_payloads(provider, response_json, expected, monkeypatc
         if provider == "claude":
             assert calls[0][1]["headers"]["anthropic-version"] == "2023-06-01"
         if provider == "gemini":
-            assert calls[0][1]["params"]["key"] == "gemini-key"
+            assert calls[0][1]["headers"]["x-goog-api-key"] == "gemini-key"
+            assert "params" not in calls[0][1]
     finally:
         matcher.close()
 
@@ -497,3 +498,14 @@ def test_capture_usage_handles_missing_or_invalid_metadata(payload, monkeypatch)
         assert matcher.last_usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     finally:
         matcher.close()
+
+
+def test_match_result_accepts_whole_number_floats_but_not_fractions_or_strings():
+    from pydantic import ValidationError
+
+    from job_searcher.ai_matching import MatchResult
+
+    assert MatchResult(job_id="a", score=85.0, reason="ok").score == 85
+    for bad in (85.5, "85", True):
+        with pytest.raises(ValidationError):
+            MatchResult(job_id="a", score=bad, reason="ok")

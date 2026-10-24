@@ -104,7 +104,7 @@ class JobSource(ABC):
                 if attempt == self.MAX_ATTEMPTS - 1:
                     raise
                 delay = float(min(2**attempt, 8))
-            jitter = random.uniform(0.0, min(self.RETRY_JITTER_SECONDS, delay * 0.1))
+            jitter = random.uniform(0.0, min(self.RETRY_JITTER_SECONDS, delay * 0.1))  # noqa: S311
             time.sleep(min(delay + jitter, self.MAX_RETRY_DELAY_SECONDS))
         raise RuntimeError("HTTP retries exhausted")
 

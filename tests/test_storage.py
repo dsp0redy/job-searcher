@@ -27,7 +27,7 @@ def test_upsert_updates_existing_job_payload(tmp_path):
     updated = job.model_copy(update={"title": "Senior Engineer", "description": "new"})
     assert store.upsert_jobs([job]) == 1
     assert store.upsert_jobs([updated]) == 0
-    with store._connect() as db:
+    with store._session() as db:
         row = db.execute("SELECT title, description FROM jobs WHERE identity=?", (job.identity,)).fetchone()
     assert row["title"] == "Senior Engineer"
     assert row["description"] == "new"
@@ -39,7 +39,7 @@ def test_scan_run_lifecycle_persists_summary(tmp_path):
     store = JobStore(str(tmp_path / "jobs.sqlite3"))
     run_id = store.start_run()
     store.finish_run(run_id, "success", {"postings_fetched": 3})
-    with store._connect() as db:
+    with store._session() as db:
         row = db.execute("SELECT status, finished_at, summary_json FROM scan_runs WHERE run_id=?", (run_id,)).fetchone()
     assert row["status"] == "success"
     assert row["finished_at"] is not None
@@ -54,7 +54,7 @@ def test_save_match_replaces_existing_cache_entry(tmp_path):
 
 def test_corrupt_match_cache_is_treated_as_cache_miss(tmp_path):
     store = JobStore(str(tmp_path / "jobs.sqlite3"))
-    with store._connect() as db:
+    with store._session() as db:
         db.execute(
             "INSERT INTO match_cache(cache_key,provider,result_json) VALUES(?,?,?)",
             ("broken", "gemini", "{invalid"),
@@ -64,7 +64,7 @@ def test_corrupt_match_cache_is_treated_as_cache_miss(tmp_path):
 
 def test_non_object_match_cache_is_treated_as_cache_miss(tmp_path):
     store = JobStore(str(tmp_path / "jobs.sqlite3"))
-    with store._connect() as db:
+    with store._session() as db:
         db.execute(
             "INSERT INTO match_cache(cache_key,provider,result_json) VALUES(?,?,?)",
             ("array", "gemini", "[]"),
@@ -101,7 +101,15 @@ def test_review_queue_rejects_unknown_job_and_invalid_status(tmp_path):
         store.set_review_status(job.identity, "interview")
 
 
-def test_retention_prunes_old_jobs_match_cache_and_scan_history(tmp_path):
+def _age(store, old):
+    stamp = old.strftime("%Y-%m-%d %H:%M:%S")
+    with store._session() as db:
+        db.execute("UPDATE match_cache SET created_at=?", (stamp,))
+        db.execute("UPDATE scan_runs SET started_at=?, finished_at=?", (stamp, stamp))
+        db.execute("UPDATE jobs SET last_seen_at=?", (old.isoformat(),))
+
+
+def test_retention_prunes_old_unreviewed_jobs_cache_and_scan_history(tmp_path):
     from datetime import datetime, timedelta, timezone
 
     store = JobStore(str(tmp_path / "jobs.sqlite3"))
@@ -109,20 +117,47 @@ def test_retention_prunes_old_jobs_match_cache_and_scan_history(tmp_path):
     job = Job(source="lever", source_id="old", company="Acme", title="Engineer",
               url="https://example.com/old", discovered_at=old)
     store.upsert_jobs([job])
-    store.set_review_status(job.identity, "saved")
     store.save_match("old-cache", "gemini", {"score": 80})
-    run_id = store.start_run()
-    store.finish_run(run_id, "success", {})
-    with store._connect() as db:
-        db.execute("UPDATE match_cache SET created_at=?", (old.strftime("%Y-%m-%d %H:%M:%S"),))
-        db.execute(
-            "UPDATE scan_runs SET started_at=?, finished_at=? WHERE run_id=?",
-            (old.strftime("%Y-%m-%d %H:%M:%S"), old.strftime("%Y-%m-%d %H:%M:%S"), run_id),
-        )
+    store.finish_run(store.start_run(), "success", {})
+    _age(store, old)
     assert store.prune_old_data(30) == {"jobs": 1, "match_cache": 1, "scan_runs": 1}
-    assert store.get_review_status(job.identity) is None
-    with store._connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_retention_keeps_reviewed_and_recently_seen_jobs(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    store = JobStore(str(tmp_path / "jobs.sqlite3"))
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    reviewed = Job(source="lever", source_id="reviewed", company="Acme", title="Engineer",
+                   url="https://example.com/r", discovered_at=old)
+    active = Job(source="lever", source_id="active", company="Acme", title="Engineer",
+                 url="https://example.com/a", discovered_at=old)
+    store.upsert_jobs([reviewed])
+    store.set_review_status(reviewed.identity, "rejected")
+    _age(store, old)
+    store.upsert_jobs([active])  # old discovered_at, but seen just now
+    assert store.prune_old_data(30)["jobs"] == 0
+    assert store.get_review_status(reviewed.identity)["status"] == "rejected"
+    assert store.review_statuses([reviewed.identity, active.identity]) == {reviewed.identity: "rejected"}
+
+
+def test_v1_database_is_migrated_with_last_seen_backfill(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+            CREATE TABLE jobs (identity TEXT PRIMARY KEY, source TEXT NOT NULL, source_id TEXT NOT NULL,
+                company TEXT NOT NULL, title TEXT NOT NULL, location TEXT NOT NULL, url TEXT NOT NULL,
+                description TEXT NOT NULL, posted_at TEXT, employment_type TEXT, experience_min REAL,
+                experience_max REAL, discovered_at TEXT NOT NULL, payload TEXT NOT NULL);
+            INSERT INTO jobs VALUES('a','s','1','c','t','l','u','d',NULL,NULL,NULL,NULL,'2026-01-01T00:00:00+00:00','{}');
+            PRAGMA user_version = 1;
+        """)
+    JobStore(str(path))
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT last_seen_at FROM jobs").fetchone()[0] == "2026-01-01T00:00:00+00:00"
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_retention_rejects_out_of_range_days(tmp_path):
@@ -157,7 +192,7 @@ def test_schema_version_is_recorded_and_newer_database_is_rejected(tmp_path):
 
     database = tmp_path / "versioned.sqlite3"
     store = JobStore(str(database))
-    with store._connect() as db:
+    with store._session() as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == JobStore.CURRENT_SCHEMA_VERSION
     newer = tmp_path / "newer.sqlite3"
     with sqlite3.connect(newer) as db:

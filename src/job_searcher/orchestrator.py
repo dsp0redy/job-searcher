@@ -11,7 +11,13 @@ from .adapters.lever import LeverAdapter
 from .adapters.workday import WorkdayAdapter
 from .ai_matching import AIResumeMatcher, MatchResult
 from .config import AppConfig
-from .matching import extract_experience_range, is_allowed_location, is_experience_compatible, score_job
+from .matching import (
+    extract_experience_range,
+    is_allowed_location,
+    is_experience_compatible,
+    is_too_senior,
+    score_job,
+)
 from .models import Job
 from .notifications import GitHubIssuePublisher
 from .reporting import prune_old_reports, write_digest, write_reports
@@ -47,7 +53,14 @@ class SearchOrchestrator:
             adapters = [
                 GreenhouseAdapter(self.config.sources.greenhouse, timeout),
                 LeverAdapter(self.config.sources.lever, timeout),
-                WorkdayAdapter(self.config.sources.workday, timeout, self.config.search.max_pages_per_source),
+                WorkdayAdapter(
+                    self.config.sources.workday,
+                    timeout,
+                    self.config.search.max_pages_per_source,
+                    detail_limit=self.config.search.workday_detail_limit,
+                    search_terms=self.config.search.workday_search_terms,
+                    max_workers=self.config.search.max_concurrency,
+                ),
             ]
             all_jobs: list[Job] = []
             source_status: dict[str, str] = {}
@@ -100,7 +113,16 @@ class SearchOrchestrator:
             excluded_by_location = 0
             excluded_by_freshness = 0
             excluded_by_experience = 0
+            excluded_by_seniority = 0
+            excluded_by_review = 0
+            reviewed = self.store.review_statuses([job.identity for job in all_jobs])
             for job in all_jobs:
+                if reviewed.get(job.identity) in {"applied", "rejected"}:
+                    excluded_by_review += 1
+                    continue
+                if is_too_senior(job.title, self.config.profile):
+                    excluded_by_seniority += 1
+                    continue
                 if not is_allowed_location(job.location, self.config.profile):
                     excluded_by_location += 1
                     continue
@@ -109,7 +131,7 @@ class SearchOrchestrator:
                     continue
                 required_min, required_max = job.experience_min, job.experience_max
                 if required_min is None and required_max is None:
-                    required_min, required_max = extract_experience_range(f"{job.title}\\n{job.description}")
+                    required_min, required_max = extract_experience_range(f"{job.title}\n{job.description}")
                 if not is_experience_compatible(required_min, required_max, self.config.profile):
                     excluded_by_experience += 1
                     continue
@@ -131,22 +153,24 @@ class SearchOrchestrator:
             if ai_matcher is not None:
                 ranked = sorted(candidates, key=lambda pair: int(pair[1]["score"]), reverse=True)
                 ai_limit = self.config.matching.max_ai_jobs_per_scan
-                selected = ranked[:ai_limit]
-                ai_deferred = {job.identity for job, _ in ranked[ai_limit:]}
                 uncached: list[Job] = []
-                for job, _ in selected:
+                for job, _ in ranked:
                     key = ai_matcher.cache_key(job)
                     cached = self.store.get_match(key)
                     if cached is not None:
                         try:
                             result = MatchResult.model_validate(cached)
                             if result.job_id == job.identity:
+                                # Cache hits cost nothing, so they never use up the paid budget.
                                 ai_results[job.identity] = result
                                 ai_cached += 1
                                 continue
                         except Exception:
                             LOG.info("Ignoring invalid cached AI result for %s", job.identity)
-                    uncached.append(job)
+                    if len(uncached) < ai_limit:
+                        uncached.append(job)
+                    else:
+                        ai_deferred.add(job.identity)
 
                 batch_size = self.config.matching.max_jobs_per_ai_batch
                 for offset in range(0, len(uncached), batch_size):
@@ -271,6 +295,8 @@ class SearchOrchestrator:
                 "excluded_by_location": excluded_by_location,
                 "excluded_by_freshness": excluded_by_freshness,
                 "excluded_by_experience": excluded_by_experience,
+                "excluded_by_seniority": excluded_by_seniority,
+                "excluded_by_review": excluded_by_review,
                 "elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
                 "source_health": {
                     "successful": sum(source_status.get(name, "").startswith("ok:") for name in ("greenhouse", "lever", "workday")),
@@ -308,7 +334,7 @@ class SearchOrchestrator:
             }
             sources_succeeded = any(value.startswith("ok:") for value in source_status.values())
             status = "success" if sources_succeeded else "no_sources_succeeded"
-            if sources_succeeded and ai_failed:
+            if sources_succeeded and (ai_failed or ai_initialization_failed):
                 status = "partial_ai_failure"
             elif sources_succeeded and summary["notifications"]["failed"] > 0:
                 status = "partial_notification_failure"
