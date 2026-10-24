@@ -179,3 +179,14 @@ def test_openai_compatible_provider_requires_api_key(
     monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
     with pytest.raises(ValueError, match="AI_API_KEY"):
         AIResumeMatcher("openai_compatible")
+
+def test_openai_compatible_provider_rejects_insecure_remote_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.setenv("AI_BASE_URL", "http://api.example.com/v1")
+    monkeypatch.setenv("AI_MODEL", "example-model")
+    monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
+    with pytest.raises(ValueError, match="HTTPS"):
+        AIResumeMatcher("openai_compatible")
+
