@@ -148,3 +148,19 @@ def test_sqlite_backup_is_restorable_and_rejects_same_path(tmp_path):
         assert db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
     with pytest.raises(ValueError, match="must differ"):
         store.backup_to(str(database))
+
+
+
+def test_schema_version_is_recorded_and_newer_database_is_rejected(tmp_path):
+    import sqlite3
+    import pytest
+
+    database = tmp_path / "versioned.sqlite3"
+    store = JobStore(str(database))
+    with store._connect() as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == JobStore.CURRENT_SCHEMA_VERSION
+    newer = tmp_path / "newer.sqlite3"
+    with sqlite3.connect(newer) as db:
+        db.execute("PRAGMA user_version = 999")
+    with pytest.raises(RuntimeError, match="newer than supported"):
+        JobStore(str(newer))
