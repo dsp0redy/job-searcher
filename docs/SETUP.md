@@ -4,51 +4,79 @@
 
 1. Install Python 3.11 or newer.
 2. Create and activate a virtual environment.
-3. Install development dependencies with python -m pip install -e ".[dev]".
-4. Review config.yml (or config.example.yml) and update role/location filters and career-site URLs.
-5. Validate configuration with job-searcher --config config.yml --check-config.
-6. Run a scan with job-searcher --config config.yml --output-dir reports.
-7. Run quality checks: ruff check src tests, mypy src/job_searcher, and pytest --cov=job_searcher --cov-report=term-missing.
+3. Install development dependencies with `python -m pip install -e ".[dev]"`.
+4. Review `config.yml` (or `config.example.yml`) and verify target cities, role filters, and career-site URLs.
+5. Validate configuration without network calls: `job-searcher --config config.yml --check-config`.
+6. Preview extracted resume text locally before enabling AI: `job-searcher --config config.yml --preview-resume`. This makes no provider calls and prints the first 1,200 characters plus quality metadata.
+7. Run a scan: `job-searcher --config config.yml --output-dir reports`.
+8. Run quality checks: `ruff check src tests`, `mypy src/job_searcher`, and `pytest --cov=job_searcher --cov-report=term-missing`.
 
-## Source adapters
+## Location and experience filters
 
-- **Workday:** public *.myworkdayjobs.com career sites. The adapter uses public CXS job-search/detail endpoints, limits listing pages, and caps detail requests per site. Employer endpoints can change, so inspect source status and original job links.
-- **Greenhouse:** configure public board tokens in sources.greenhouse.
-- **Lever:** configure public site slugs in sources.lever.
+The checked-in profile is intentionally restricted to **Bengaluru/Bangalore and Hyderabad**. These are hard filters, not just scoring bonuses. Country-only locations such as "India", remote-only labels, and postings in unrelated cities are excluded before AI matching and before GitHub Issue publishing. A posting listing multiple cities is eligible if its location field explicitly includes one of the configured target cities. If you want to change the target cities, edit `profile.locations` in both config files and review the location regression fixture and tests.
 
-Source failures are isolated so one failing employer/site does not stop other sources. Greenhouse and Lever requests use bounded retries for transient network failures and retryable HTTP responses (429 and 5xx), respect numeric or HTTP-date Retry-After headers, and cap server-requested waits. Workday has its own listing/detail request path; unified status retry and rate-limit behavior across all adapters remains planned. This is not a universal job crawler and does not bypass authentication, CAPTCHAs, or access controls.
+The local score uses configured role-title and skill evidence. The scanner also extracts explicit experience requirements (for example, "3-5 years" or "8+ years") and excludes roles that cannot overlap the configured candidate range. When a requirement cannot be reliably extracted, it is left unknown and reported as such; the scanner does not guess. This parser is conservative and does not replace reading the original job description.
 
-## Matching and filtering
+## Source adapters and resilience
 
-Local matching scores configured title matches, location matches, and skills found in the job title/description. The checked-in configuration defaults to Gemini AI matching, which compares a resume against selected jobs. Add GEMINI_API_KEY and plain-text resume content as RESUME_TEXT in GitHub Actions Secrets. For local runs, RESUME_FILE may point to an ignored PDF or text file instead. To use Claude, set matching.provider to claude and add ANTHROPIC_API_KEY. For an OpenAI-compatible API, set repository variable AI_PROVIDER=openai_compatible, AI_BASE_URL, and AI_MODEL, and store the provider key in AI_API_KEY (a GitHub Actions Secret). Groq uses https://api.groq.com/openai/v1; OpenRouter uses https://openrouter.ai/api/v1. For local-only keyword scoring set matching.provider to none. A score is a relevance estimate, not an interview probability.
+- **Workday:** public `*.myworkdayjobs.com` career sites using public CXS job-search/detail endpoints.
+- **Greenhouse:** configure public board tokens in `sources.greenhouse`.
+- **Lever:** configure public site slugs in `sources.lever`.
 
-AI calls are bounded by matching.max_ai_jobs_per_scan (40 by default) and grouped using matching.max_jobs_per_ai_batch (3 by default). Successful results are cached in SQLite using a key that includes resume text, job content, provider, endpoint, and model. Missing or invalid results are not cached as successful matches, so they can be retried later. If AI initialization or a batch fails, the scan records the AI failure and still produces reports using local evidence; notifications requiring a valid AI result are skipped for that job. Review the run summary and report rather than treating fallback as a successful AI match.
+All source adapters share bounded retries for transient network failures and HTTP 429/5xx responses, support numeric and HTTP-date `Retry-After`, cap retry delay, add retry jitter, and pace requests by host within the process. Source failures are isolated so one failing employer/site does not stop other sources. Workday listing and detail requests use the same retry policy. Public endpoints and response schemas can change; the workflow does not bypass authentication, CAPTCHAs, or access controls.
 
-Postings with a known timestamp older than search.posted_within_days are excluded. Greenhouse updated_at and Workday startDate are not treated as original publication dates; if no actual posting date is exposed, the posting is retained. Undated postings are kept because many public career pages omit a parseable date. Workday relative labels such as “Posted 2 Days Ago” are normalized to approximate UTC timestamps.
+## Matching, resume privacy, and AI cost
 
-## GitHub Actions and notifications
+Local matching is deterministic. Optional AI matching supports Gemini, Claude, and OpenAI-compatible APIs. Add the provider key and `RESUME_TEXT` as GitHub Actions Secrets. For local runs, `RESUME_FILE` can point to a PDF or text file. Use `--preview-resume` to review extraction quality locally before a run. Empty extraction is rejected; unusually short text produces a warning. AI mode sends resume text and selected job-description fields to the configured provider, so review that provider's privacy and retention terms.
 
-CI runs Ruff, strict mypy, tests, and the 100% statement/branch coverage gate on pushes and pull requests. The scheduled workflow runs weekdays at 02:17 UTC and can be run manually from the Actions tab. Scheduled scans are serialized, have a finite job timeout, and upload reports as artifacts even if the scan fails. Artifacts are retained for 14 days.
+AI calls are bounded by `matching.max_ai_jobs_per_scan` and `matching.max_jobs_per_ai_batch`; successful results are cached using job content, resume, provider, endpoint, and model. The scan records provider-reported input/output token usage when available. It estimates dollar cost only when both `matching.input_cost_usd_per_million_tokens` and `matching.output_cost_usd_per_million_tokens` are explicitly configured. Rates are not guessed because pricing varies by provider and model. If AI initialization or a batch fails, the scan records the failure and still generates reports using local evidence; it skips notifications for jobs without a valid AI result.
 
-The checked-in config.yml enables GitHub Issues notifications for postings whose configured match score meets matching.threshold. The workflow provides GITHUB_TOKEN and GITHUB_REPOSITORY automatically and declares only contents: read and issues: write. For local issue creation, provide a token with issue-write permission and the repository in owner/name format through environment variables. Never put tokens in configuration or source control.
+Provider configuration:
+- Gemini: `GEMINI_API_KEY`, optional `GEMINI_MODEL`.
+- Claude: `ANTHROPIC_API_KEY`, optional `CLAUDE_MODEL`, and `matching.provider: claude`.
+- OpenAI-compatible: repository variables `AI_PROVIDER=openai_compatible`, `AI_BASE_URL`, and `AI_MODEL`, plus secret `AI_API_KEY`. Groq uses `https://api.groq.com/openai/v1`; OpenRouter uses `https://openrouter.ai/api/v1`.
+- Local-only mode: set `matching.provider: none`.
 
-The workflow exposes GEMINI_API_KEY, ANTHROPIC_API_KEY, AI_API_KEY, and RESUME_TEXT as repository Actions Secrets. Provider selection uses repository variable AI_PROVIDER (default gemini). For an OpenAI-compatible provider, set AI_PROVIDER=openai_compatible, AI_BASE_URL, and AI_MODEL as repository Variables and AI_API_KEY as a Secret. The Gemini model defaults to gemini-3.5-flash-lite and can be overridden using GEMINI_MODEL; Claude uses CLAUDE_MODEL. If AI mode is selected but its key or resume text is missing, the orchestrator logs the initialization failure and continues with local scoring/reporting; review the run as a partial AI failure, not a full AI match.
+## Freshness and reports
 
-Each created issue contains a stable hidden identity marker. Later runs scan existing issues once and reuse the marker cache during the scan to avoid creating duplicates. GitHub's API does not provide an atomic create-if-absent operation, so unrelated concurrent issue creators may still race.
+`search.posted_within_days` controls the freshness window. Known older postings are excluded and counted in the scan summary. Undated postings are retained because public boards often omit a reliable publication date; reports label them as `undated`. Greenhouse `updated_at` and Workday `startDate` are not treated as original publication dates.
 
-## Privacy and recovery
+Each scan produces JSON, CSV, Markdown, and an employer-grouped digest with links and match evidence. Reports include stable job identities for the local review queue. Spreadsheet formula-like CSV cells are escaped. Local report files older than `search.report_retention_days` are pruned. Workflow artifacts are retained for 14 days.
 
-- Do not commit API tokens, .env, resumes, SQLite databases, or personal generated reports.
-- For scheduled AI matching, store extracted resume text in the RESUME_TEXT Actions Secret; do not commit the PDF to a public repository.
-- In AI mode, resume text and selected job-description excerpts are sent to the chosen provider. Review the provider's privacy and retention terms before enabling it.
-- data/jobs.sqlite3 stores job descriptions and scan state; reports/ may contain job/profile matching evidence.
-- Workflow report artifacts are available to repository users with appropriate access until they expire.
-- If a run fails, inspect workflow logs and the JSON summary first. Confirm source URLs and credentials, then rerun manually only after considering AI-token cost and whether issue notifications are enabled.
-- Unit and property-based tests use mocked provider/network responses and temporary SQLite databases. They do not prove current employer endpoints are available or that live secrets and permissions are correct. A controlled manual scan is still needed.
+## Review queue, retention, and backups
 
-## Current limitations
+Use the `identity` field in a JSON report to set or inspect local review status:
 
-- Workday and AI-provider retry policies do not yet share the same Retry-After implementation as Greenhouse/Lever.
-- Resume parsing quality checks, mandatory-experience extraction, provider token/billing usage accounting, source-health metrics, and dependency auditing remain planned.
-- Workday endpoints and employer career-site URLs may change.
-- Listing-page and detail-request caps intentionally trade exhaustive coverage for lower request volume.
+```bash
+job-searcher --config config.yml --job-identity YOUR_JOB_IDENTITY --review-status saved --review-notes "Review role requirements"
+job-searcher --config config.yml --job-identity YOUR_JOB_IDENTITY
+```
+
+Supported statuses are `saved`, `applied`, `rejected`, and `stale`. Notes remain local in SQLite and are not sent to GitHub. The tool does not apply to jobs automatically.
+
+Create a consistent online SQLite backup and prune retained state with:
+
+```bash
+job-searcher --config config.yml --backup-db backups/jobs.sqlite3
+job-searcher --config config.yml --prune-now
+```
+
+Database retention is controlled by `storage.retention_days`; local report retention is controlled by `search.report_retention_days`. SQLite records a schema version and rejects a database created by a newer unsupported schema. Back up before changing application versions. Schema changes should be additive or include an explicit migration before increasing the schema version.
+
+## GitHub Actions, notifications, and alerts
+
+The scheduled workflow runs weekdays at 02:17 UTC and can be started manually from **Actions → Scheduled job scan → Run workflow**. It is serialized, has a 30-minute timeout, installs runtime dependencies, validates config, uploads reports even after scan failure, and uses only `contents: read` and `issues: write` permissions. If all sources fail or AI matching is incomplete, the CLI exits nonzero after preserving reports. The workflow opens or updates one scan-health alert issue and closes it after a successful run.
+
+The checked-in config enables job Issue notifications when the final score reaches `matching.threshold`. The workflow provides `GITHUB_TOKEN` and `GITHUB_REPOSITORY` automatically. Existing job issues use a stable hidden marker, but GitHub does not offer atomic create-if-absent semantics, so independent concurrent creators can still race.
+
+CI runs Ruff, strict mypy, tests, and the 100% statement/branch coverage gate. A weekly dependency-audit workflow runs `pip-audit`; Dependabot proposes weekly updates for Python dependencies and GitHub Actions.
+
+## Recovery checklist
+
+1. Open the failed Actions run and inspect the JSON summary and source-specific status.
+2. If no source succeeded, verify career-site URLs and check whether the public endpoint or rate limit changed.
+3. If AI failed, verify provider selection, secret names, resume extraction, endpoint/model variables, and provider quota. Review partial-failure status before rerunning because AI calls can incur cost.
+4. If issue creation failed, verify repository name and `issues: write` permission. Reports remain available even if notification creation fails.
+5. Use uploaded artifacts to inspect candidate locations and original job URLs. Do not broaden the city allowlist just to increase result count without reviewing false positives.
+
+Unit/property tests use mocked network responses and temporary databases. They do not validate live employer endpoints, real credentials, actual GitHub permissions, or AI-provider billing. A controlled manual scan is still required for final production verification.
