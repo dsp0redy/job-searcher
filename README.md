@@ -42,7 +42,7 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 python -m pip install -e ".[dev]"
 job-searcher --config config.yml --check-config
-job-searcher --config config.yml --output-dir reports
+job-searcher --config config.yml --output-dir reports --dry-run  # live sources, no AI or GitHub Issues
 ruff check src tests
 mypy src/job_searcher
 pytest --cov=job_searcher --cov-report=term-missing
@@ -56,7 +56,7 @@ The checked-in config defaults to Gemini AI scoring with `gemini-3.5-flash-lite`
 
 ## GitHub Actions and issue notifications
 
-The scheduled workflow runs on weekdays at 02:17 UTC (07:47 India Standard Time, subject to GitHub scheduling delays) and can be started manually from **Actions → Scheduled job scan → Run workflow**. It installs the package, validates configuration, scans sources, and uploads reports for 14 days.
+The scheduled workflow runs on weekdays at 02:17 UTC (07:47 India Standard Time, subject to GitHub scheduling delays) and can be started manually from **Actions → Scheduled job scan → Run workflow**. Manual runs default to a safe dry-run: they fetch live sources and upload reports but disable AI calls and job Issue creation. Choose `dry_run: false` only when you intentionally want a full scan that may spend AI tokens and create GitHub Issues. Scheduled weekday runs continue using the configured AI and notifications.
 
 The checked-in configuration enables GitHub Issues notifications. The workflow passes the built-in `GITHUB_TOKEN` and repository name and declares `issues: write`. If you run locally, set:
 
