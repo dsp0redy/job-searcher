@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 
-from job_searcher.reporting import _safe_csv_cell, write_digest, write_reports
+from job_searcher.reporting import _safe_csv_cell, prune_old_reports, write_digest, write_reports
 
 
 def test_safe_csv_cell_escapes_formula_prefixes_and_preserves_safe_values():
@@ -85,3 +85,28 @@ def test_digest_handles_no_matches(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert "Matching postings: 0" in text
     assert "No postings passed" in text
+
+
+
+def test_report_retention_removes_only_old_scan_files(tmp_path):
+    import os
+    import time
+    import pytest
+
+    old_report = tmp_path / "scan-old.json"
+    fresh_report = tmp_path / "scan-fresh.json"
+    unrelated = tmp_path / "notes.txt"
+    for path in (old_report, fresh_report, unrelated):
+        path.write_text("data", encoding="utf-8")
+    old_time = time.time() - 10 * 86400
+    os.utime(old_report, (old_time, old_time))
+    assert prune_old_reports(str(tmp_path), 3) == 1
+    assert not old_report.exists()
+    assert fresh_report.exists()
+    assert unrelated.exists()
+    with pytest.raises(ValueError, match="retention_days"):
+        prune_old_reports(str(tmp_path), 0)
+
+
+def test_report_retention_missing_directory_is_safe(tmp_path):
+    assert prune_old_reports(str(tmp_path / "absent"), 30) == 0
