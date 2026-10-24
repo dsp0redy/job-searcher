@@ -308,6 +308,8 @@ class SearchOrchestrator:
             status = "success" if sources_succeeded else "no_sources_succeeded"
             if sources_succeeded and ai_failed:
                 status = "partial_ai_failure"
+            elif sources_succeeded and summary["notifications"]["failed"] > 0:
+                status = "partial_notification_failure"
             summary["run_status"] = status
             self.store.finish_run(run_id, status, summary)
             return summary
