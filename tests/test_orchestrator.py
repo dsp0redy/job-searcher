@@ -291,6 +291,8 @@ def test_notification_results_are_reported(tmp_path, monkeypatch, publish_status
     summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
     assert summary["notifications"][publish_status if publish_status != "already_exists" else "already_exists"] >= 0
     assert summary["notifications"]["results"][0]["status"] == publish_status
+    if publish_status == "failed":
+        assert summary["run_status"] == "partial_notification_failure"
     assert publisher_instances[0].closed is True
 
 
