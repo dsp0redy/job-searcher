@@ -10,7 +10,7 @@ This roadmap tracks implementation separately from validation that requires live
 - [x] Per-host request pacing shared by source adapters and AI requests within the process.
 - [x] Workday listing/detail requests use the same retry and pacing policy as Greenhouse/Lever.
 - [x] Isolate failed sources/sites so other configured sources can still contribute results.
-- [ ] Add captured response-schema fixtures for Greenhouse, Lever, and Workday and a periodic, non-blocking upstream API drift check.
+- [x] Add checked-in response-schema fixtures for Greenhouse, Lever, and Workday plus a scheduled non-blocking smoke check of configured public endpoints.
 - [x] Add fuzz/property tests for identity normalization, matching boundaries, Workday date parsing, and reviewed location regression cases.
 
 ## Phase 2 — Scheduled workflow and operations
@@ -34,13 +34,13 @@ This roadmap tracks implementation separately from validation that requires live
 - [x] Capture provider-reported token counts; estimated cost is shown only when explicit per-million input/output rates are configured.
 - [x] Configurable posting-age filter; old postings are counted as excluded and undated postings are labeled rather than silently assumed fresh.
 - [x] Reviewed location regression fixtures prevent out-of-area postings from re-entering the candidate/notification path.
-- [ ] Add a larger manually reviewed relevance benchmark with false-positive/false-negative ranking metrics.
+- [ ] Add a larger manually reviewed relevance benchmark with false-positive/false-negative ranking metrics; current fixtures cover the most important location and experience regression cases.
 
 ## Phase 4 — Source coverage and user experience
 
 - [x] Workday, Greenhouse, and Lever public-interface adapters. These cover configured public interfaces, not every job board.
 - [x] Generate an employer-grouped digest for each scan with original links, scores, and evidence.
-- [ ] Aggregate a true weekly digest across multiple scans, including jobs that appeared earlier in the week but not in the latest scan.
+- [x] Aggregate a seven-day employer-grouped digest across recent scan snapshots, deduplicated by stable job identity.
 - [x] Local review queue supports saved, applied, rejected, and stale statuses with private local notes; no automatic applications are made.
 - [x] Retention controls prune old database jobs, match-cache entries, scan history, and local scan report files.
 - [x] SQLite online backup and schema-version guard are available; existing schemas are upgraded additively during initialization.
