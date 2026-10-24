@@ -39,6 +39,56 @@ def is_allowed_location(location: str, profile: ProfileConfig) -> bool:
     return any(_contains_location(location, item) for item in allowed)
 
 
+def extract_experience_range(text: str) -> tuple[float | None, float | None]:
+    """Extract the first explicit years-of-experience range without guessing when absent."""
+    range_match = re.search(
+        r"(?<!\\d)(\\d{1,2})\\s*(?:-|to)\\s*(\\d{1,2})\\s*(?:years?|yrs?)\\b",
+        text,
+        re.IGNORECASE,
+    )
+    if range_match:
+        minimum, maximum = float(range_match.group(1)), float(range_match.group(2))
+        if minimum <= maximum:
+            return minimum, maximum
+        return None, None
+    minimum_match = re.search(
+        r"(?:(?:at least|minimum(?: of)?|over|more than)\\s*)?(\\d{1,2})\\s*\\+?\\s*(?:years?|yrs?)\\b"
+        r"(?:\\s+of)?\\s+(?:relevant\\s+)?experience\\b|"
+        r"(?:at least|minimum(?: of)?|over|more than)\\s*(\\d{1,2})\\s*\\+?\\s*(?:years?|yrs?)\\b",
+        text,
+        re.IGNORECASE,
+    )
+    if minimum_match:
+        value = next((group for group in minimum_match.groups() if group is not None), None)
+        if value is not None:
+            return float(value), None
+    plus_match = re.search(r"(?<!\\d)(\\d{1,2})\\s*\\+\\s*(?:years?|yrs?)\\b", text, re.IGNORECASE)
+    if plus_match:
+        return float(plus_match.group(1)), None
+    return None, None
+
+
+def is_experience_compatible(
+    minimum_required: float | None,
+    maximum_required: float | None,
+    profile: ProfileConfig,
+) -> bool:
+    """Reject explicit experience ranges that cannot overlap the candidate's configured range."""
+    if (
+        minimum_required is not None
+        and profile.maximum_experience_years is not None
+        and minimum_required > profile.maximum_experience_years
+    ):
+        return False
+    if (
+        maximum_required is not None
+        and profile.minimum_experience_years is not None
+        and maximum_required < profile.minimum_experience_years
+    ):
+        return False
+    return True
+
+
 def score_job(job: Job, profile: ProfileConfig) -> dict[str, Any]:
     """Return transparent local score and evidence; never invent candidate qualifications."""
     title = job.title.casefold()
