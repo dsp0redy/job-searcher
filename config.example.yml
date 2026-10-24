@@ -13,7 +13,7 @@ search:
 storage:
   path: "data/jobs.sqlite3"
 matching:
-  provider: "none"
+  provider: "gemini"
   threshold: 65
   max_jobs_per_ai_batch: 8
   max_ai_jobs_per_scan: 40
