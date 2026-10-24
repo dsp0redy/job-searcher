@@ -86,7 +86,7 @@ jobs:
 
       - name: Open or update scan-health alert
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- job-searcher-scan-health-alert -->';
@@ -116,7 +116,7 @@ jobs:
             }
       - name: Resolve scan-health alert after a successful scan
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const marker = '<!-- job-searcher-scan-health-alert -->';
