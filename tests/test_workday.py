@@ -98,6 +98,24 @@ def test_fetch_normalizes_listing_and_detail_fields(monkeypatch: pytest.MonkeyPa
     assert jobs[0].location == "Bengaluru | Hyderabad"
     assert jobs[0].description == "C++ systems role"
     assert jobs[0].posted_at is not None
+    assert adapter.site_status["nvidia"] == "ok: 1 postings"
+
+
+def test_fetch_records_failed_site_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = WorkdayAdapter(
+        ["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"],
+        max_pages=1,
+    )
+
+    def fail_request(*args: object, **kwargs: object) -> FakeResponse:
+        raise RuntimeError("site unavailable")
+
+    monkeypatch.setattr(adapter.client, "post", fail_request)
+    try:
+        assert adapter.fetch() == []
+        assert adapter.site_status["nvidia"] == "failed: no successful job-search response"
+    finally:
+        adapter.close()
 
 
 def test_fetch_obeys_detail_request_cap_and_keeps_listing_date(monkeypatch: pytest.MonkeyPatch) -> None:
