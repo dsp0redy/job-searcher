@@ -22,7 +22,7 @@ _RELATIVE_POSTED = re.compile(r"(today|yesterday|(?:posted\s*)?(\d+)\+?\s*days?\
 class WorkdayAdapter(JobSource):
     name = "workday"
 
-    def __init__(self, career_urls: list[str], timeout: float = 20, max_pages: int = 5, detail_limit: int = 25) -> None:
+    def __init__(self, career_urls: list[str], timeout: float = 20, max_pages: int = 5, detail_limit: int = 12) -> None:
         super().__init__(timeout)
         self.career_urls = career_urls
         self.max_pages = max_pages
