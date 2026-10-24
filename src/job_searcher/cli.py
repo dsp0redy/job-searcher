@@ -21,10 +21,15 @@ def main() -> None:
     parser.add_argument("--review-status", choices=["saved", "applied", "rejected", "stale"], help="Set review status for --job-identity")
     parser.add_argument("--review-notes", default="", help="Optional private local review notes (max 2000 characters)")
     parser.add_argument("--prune-now", action="store_true", help="Prune persisted data using configured retention and exit")
+    parser.add_argument("--dry-run", action="store_true", help="Fetch live sources and write reports without AI calls or GitHub Issue creation")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = AppConfig.load(args.config)
+    if args.dry_run:
+        config.matching.provider = "none"
+        config.notifications.github_issues = False
+        logging.info("Dry run enabled: AI matching and GitHub Issue creation are disabled")
     if args.preview_resume:
         try:
             resume = load_resume_text()
