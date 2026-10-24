@@ -1,5 +1,5 @@
 from job_searcher.config import ProfileConfig
-from job_searcher.matching import is_allowed_location, score_job
+from job_searcher.matching import (extract_experience_range, is_allowed_location, is_experience_compatible, score_job)
 from job_searcher.models import Job
 
 
@@ -88,3 +88,29 @@ def test_out_of_area_job_gets_zero_local_score_even_if_title_and_skills_match():
     assert result["score"] == 0
     assert result["location_allowed"] is False
     assert result["reason"].startswith("Excluded:")
+
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Requires 3-5 years of experience", (3.0, 5.0)),
+        ("Minimum of 3 years of experience", (3.0, None)),
+        ("5 years experience in C++", (5.0, None)),
+        ("8+ years of relevant experience", (8.0, None)),
+        ("At least 4 yrs experience", (4.0, None)),
+        ("No experience details listed", (None, None)),
+        ("Requires 8-3 years experience", (None, None)),
+    ],
+)
+def test_extract_experience_range(text, expected):
+    assert extract_experience_range(text) == expected
+
+
+def test_experience_compatibility_rejects_roles_outside_configured_range():
+    profile = ProfileConfig(minimum_experience_years=2, maximum_experience_years=5)
+    assert not is_experience_compatible(8, None, profile)
+    assert not is_experience_compatible(None, 1, profile)
+    assert is_experience_compatible(3, 4, profile)
+    assert is_experience_compatible(None, None, profile)
+    assert is_experience_compatible(8, None, ProfileConfig())
