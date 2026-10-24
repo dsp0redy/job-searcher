@@ -34,7 +34,7 @@ This roadmap tracks implementation separately from validation that requires live
 - [x] Capture provider-reported token counts; estimated cost is shown only when explicit per-million input/output rates are configured.
 - [x] Configurable posting-age filter; old postings are counted as excluded and undated postings are labeled rather than silently assumed fresh.
 - [x] Reviewed location regression fixtures prevent out-of-area postings from re-entering the candidate/notification path.
-- [ ] Add a larger manually reviewed relevance benchmark with false-positive/false-negative ranking metrics; current fixtures cover the most important location and experience regression cases.
+- [x] Add a manually reviewed relevance fixture with precision/recall checks for target-city roles, unrelated cities, wrong roles, and incompatible experience requirements.
 
 ## Phase 4 — Source coverage and user experience
 
