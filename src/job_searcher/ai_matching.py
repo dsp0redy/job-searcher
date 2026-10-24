@@ -328,9 +328,8 @@ class AIResumeMatcher:
                     attempt + 1, type(exc).__name__, str(exc)[:240],
                 )
 
-        if last_error is not None:
-            LOG.warning(
-                "AI matching batch remains incomplete after correction attempt; valid matches recovered: %d/%d",
-                len(results), len(valid_ids),
-            )
+        LOG.warning(
+            "AI matching batch remains incomplete after correction attempt; valid matches recovered: %d/%d",
+            len(results), len(valid_ids),
+        )
         return results
