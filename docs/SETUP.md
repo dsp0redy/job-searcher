@@ -41,7 +41,7 @@ Provider configuration:
 
 `search.posted_within_days` controls the freshness window. Known older postings are excluded and counted in the scan summary. Undated postings are retained because public boards often omit a reliable publication date; reports label them as `undated`. Greenhouse `updated_at` and Workday `startDate` are not treated as original publication dates.
 
-Each scan produces JSON, CSV, Markdown, and an employer-grouped digest with links and match evidence. Reports include stable job identities for the local review queue. Spreadsheet formula-like CSV cells are escaped. Local report files older than `search.report_retention_days` are pruned. Workflow artifacts are retained for 14 days.
+Each scan produces JSON, CSV, Markdown, and an employer-grouped seven-day digest with links and match evidence. Reports include stable job identities for the local review queue. Spreadsheet formula-like CSV cells are escaped. Local report files older than `search.report_retention_days` are pruned. The scheduled workflow restores/saves recent report snapshots through the Actions cache so later weekly digests can aggregate prior scans; cache availability is best-effort and snapshots are still subject to the configured retention. Workflow artifacts are retained for 14 days.
 
 ## Review queue, retention, and backups
 
