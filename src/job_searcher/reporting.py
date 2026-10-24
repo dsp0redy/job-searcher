@@ -20,7 +20,7 @@ def write_reports(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> t
     csv_path = root / f"scan-{run_id}.csv"
     md_path = root / f"scan-{run_id}.md"
     json_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    fields = ["source", "company", "title", "location", "url", "score", "reason", "skill_hits"]
+    fields = ["identity", "source", "company", "title", "location", "url", "score", "reason", "skill_hits"]
     with csv_path.open("w", newline="", encoding="utf-8-sig") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
@@ -30,6 +30,7 @@ def write_reports(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> t
     lines = [f"# Job Search Report — run {run_id}", "", f"Candidates: {len(rows)}", ""]
     for row in sorted(rows, key=lambda r: int(r.get("score", 0)), reverse=True):
         lines.extend([f"## {row.get('title', 'Untitled')} — {row.get('company', '')}",
+                      f"- **Identity:** {row.get('identity', '')}",
                       f"- **Score:** {row.get('score', 0)}/100",
                       f"- **Location:** {row.get('location', 'Unknown')}",
                       f"- **Source:** {row.get('source', 'Unknown')}",
