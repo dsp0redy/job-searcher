@@ -73,6 +73,11 @@ class SearchOrchestrator:
                 finally:
                     adapter.close()
 
+            fetched_count = len(all_jobs)
+            # Multiple configured boards/sites can return the same posting. Keep the
+            # latest occurrence while ensuring it is scored and reported only once.
+            unique_jobs = {job.identity: job for job in all_jobs}
+            all_jobs = list(unique_jobs.values())
             inserted = self.store.upsert_jobs(all_jobs)
             cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.search.posted_within_days)
             candidates: list[tuple[Job, dict[str, object]]] = []
@@ -207,7 +212,7 @@ class SearchOrchestrator:
             summary = {
                 "run_id": run_id,
                 "sources": source_status,
-                "postings_fetched": len(all_jobs),
+                "postings_fetched": fetched_count,
                 "new_identities": inserted,
                 "qualified_candidates": len(rows),
                 "matching": provider if ai_matcher else (
