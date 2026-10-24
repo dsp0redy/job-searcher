@@ -15,7 +15,7 @@ storage:
 matching:
   provider: "gemini"
   threshold: 65
-  max_jobs_per_ai_batch: 8
+  max_jobs_per_ai_batch: 3
   max_ai_jobs_per_scan: 40
 sources:
   greenhouse: []

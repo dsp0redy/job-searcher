@@ -45,7 +45,22 @@ class SearchOrchestrator:
                 try:
                     found = adapter.fetch()
                     all_jobs.extend(found)
-                    source_status[adapter.name] = f"ok: {len(found)} postings"
+                    if adapter.name == "workday":
+                        site_status = getattr(adapter, "site_status", {})
+                        successful_sites = sum(value.startswith("ok:") for value in site_status.values())
+                        source_status[adapter.name] = (
+                            f"ok: {len(found)} postings; {successful_sites}/{len(site_status)} sites responded"
+                            if successful_sites
+                            else f"failed: 0/{len(site_status)} Workday sites responded"
+                        )
+                        for site, site_result in site_status.items():
+                            source_status[f"workday:{site}"] = site_result
+                    elif adapter.name == "greenhouse" and not adapter.board_tokens:
+                        source_status[adapter.name] = "skipped: no Greenhouse boards configured"
+                    elif adapter.name == "lever" and not adapter.site_slugs:
+                        source_status[adapter.name] = "skipped: no Lever sites configured"
+                    else:
+                        source_status[adapter.name] = f"ok: {len(found)} postings"
                 except Exception as exc:
                     source_status[adapter.name] = f"failed: {type(exc).__name__}"
                     LOG.exception("Source %s failed; continuing other sources", adapter.name)
@@ -190,7 +205,8 @@ class SearchOrchestrator:
                 "matching": provider if ai_matcher else "deterministic local scoring",
                 "ai": {
                     "enabled": ai_matcher is not None,
-                    "scored": len(ai_results),
+                    "scored": len(ai_results) - ai_cached,
+                    "matched_including_cache": len(ai_results),
                     "cached": ai_cached,
                     "failed": len(ai_failed),
                     "deferred_by_scan_limit": len(ai_deferred),
@@ -207,7 +223,11 @@ class SearchOrchestrator:
                 },
                 "reports": [str(path) for path in paths],
             }
-            status = "success" if any(value.startswith("ok:") for value in source_status.values()) else "no_sources_succeeded"
+            sources_succeeded = any(value.startswith("ok:") for value in source_status.values())
+            status = "success" if sources_succeeded else "no_sources_succeeded"
+            if sources_succeeded and ai_failed:
+                status = "partial_ai_failure"
+            summary["run_status"] = status
             self.store.finish_run(run_id, status, summary)
             return summary
         except Exception as exc:
