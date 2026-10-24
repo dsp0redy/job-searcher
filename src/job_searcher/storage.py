@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 from .models import Job
@@ -42,6 +43,12 @@ class JobStore:
                     run_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     finished_at TEXT, status TEXT NOT NULL, summary_json TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE TABLE IF NOT EXISTS job_review (
+                    identity TEXT PRIMARY KEY REFERENCES jobs(identity) ON DELETE CASCADE,
+                    status TEXT NOT NULL CHECK(status IN ('saved', 'applied', 'rejected', 'stale')),
+                    notes TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
             """)
 
@@ -91,3 +98,68 @@ class JobStore:
         with self._connect() as db:
             db.execute("UPDATE scan_runs SET finished_at=CURRENT_TIMESTAMP,status=?,summary_json=? WHERE run_id=?",
                        (status, json.dumps(summary, ensure_ascii=False), run_id))
+
+
+    REVIEW_STATUSES = {"saved", "applied", "rejected", "stale"}
+
+    def set_review_status(self, identity: str, status: str, notes: str = "") -> dict[str, Any]:
+        """Set a local review-queue status for a known job identity."""
+        normalized = status.strip().casefold()
+        if normalized not in self.REVIEW_STATUSES:
+            raise ValueError(f"status must be one of: {', '.join(sorted(self.REVIEW_STATUSES))}")
+        with self._connect() as db:
+            exists = db.execute("SELECT 1 FROM jobs WHERE identity=?", (identity,)).fetchone()
+            if exists is None:
+                raise KeyError(f"Unknown job identity: {identity}")
+            db.execute(
+                """INSERT INTO job_review(identity,status,notes,updated_at)
+                   VALUES(?,?,?,CURRENT_TIMESTAMP)
+                   ON CONFLICT(identity) DO UPDATE SET
+                   status=excluded.status,notes=excluded.notes,updated_at=CURRENT_TIMESTAMP""",
+                (identity, normalized, notes[:2000]),
+            )
+            row = db.execute(
+                "SELECT identity,status,notes,updated_at FROM job_review WHERE identity=?",
+                (identity,),
+            ).fetchone()
+        return dict(row)
+
+    def get_review_status(self, identity: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT identity,status,notes,updated_at FROM job_review WHERE identity=?",
+                (identity,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def prune_old_data(self, retention_days: int) -> dict[str, int]:
+        """Prune persisted job, cache, and scan history older than a validated retention window."""
+        if retention_days < 1 or retention_days > 3650:
+            raise ValueError("retention_days must be between 1 and 3650")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+        with self._connect() as db:
+            jobs = db.execute("DELETE FROM jobs WHERE discovered_at < ?", (cutoff,)).rowcount
+            matches = db.execute(
+                "DELETE FROM match_cache WHERE datetime(created_at) < datetime(?)", (cutoff,)
+            ).rowcount
+            runs = db.execute(
+                """DELETE FROM scan_runs
+                   WHERE datetime(COALESCE(finished_at, started_at)) < datetime(?)""",
+                (cutoff,),
+            ).rowcount
+        return {"jobs": max(jobs, 0), "match_cache": max(matches, 0), "scan_runs": max(runs, 0)}
+
+    def backup_to(self, destination: str) -> str:
+        """Create a consistent SQLite backup using SQLite's online backup API."""
+        target_path = Path(destination)
+        if target_path.resolve() == self.path.resolve():
+            raise ValueError("Backup destination must differ from the active database path")
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        source = self._connect()
+        target = sqlite3.connect(target_path)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+        return str(target_path)
