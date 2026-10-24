@@ -358,3 +358,22 @@ def test_fetch_handles_non_integer_total_after_full_page(monkeypatch: pytest.Mon
     finally:
         adapter.close()
 
+def test_fetch_logs_and_falls_back_on_http_detail_failure(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    import httpx
+
+    adapter = WorkdayAdapter(["https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"], max_pages=1)
+    listing = {"jobPostings": [{
+        "externalPath": "/job/Engineer_REQ-1", "title": "Engineer",
+        "locationsText": "India",
+    }], "total": 1}
+    monkeypatch.setattr(adapter.client, "post", lambda *a, **kw: FakeResponse(listing))
+    monkeypatch.setattr(adapter.client, "get", lambda *a, **kw: (_ for _ in ()).throw(
+        httpx.ConnectError("offline", request=httpx.Request("GET", "https://example.com"))
+    ))
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert jobs[0].location == "India"
+    assert "details unavailable" in caplog.text
+
