@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 import logging
-from hashlib import sha256
 import os
+from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -43,7 +44,7 @@ class AIResumeMatcher:
             if path.suffix.casefold() == ".pdf":
                 from pypdf import PdfReader
 
-                self.resume_text = "\\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages).strip()
+                self.resume_text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages).strip()
             else:
                 self.resume_text = path.read_text(encoding="utf-8").strip()
         if not self.resume_text:
