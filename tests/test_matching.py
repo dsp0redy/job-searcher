@@ -17,3 +17,13 @@ def test_empty_profile_never_gives_false_positive():
     job = Job(source="lever", source_id="x", company="Acme", title="Engineer",
               url="https://example.com/x", description="C++ Linux")
     assert score_job(job, ProfileConfig())["score"] == 0
+
+def test_cache_key_changes_with_provider_and_profile():
+    from job_searcher.matching import cache_key
+
+    job = Job(source="lever", source_id="x", company="Acme", title="C++ Engineer",
+              url="https://example.com/x", description="Linux")
+    profile = ProfileConfig(skills=["C++"])
+    assert cache_key(job, profile, "gemini") != cache_key(job, profile, "claude")
+    assert cache_key(job, profile) != cache_key(job, ProfileConfig(skills=["Linux"]))
+
