@@ -1,6 +1,6 @@
 # Job Searcher
 
-A Python job-discovery tool tailored for C++ / Linux / embedded systems roles. It scans configured public career sites, normalizes postings, stores a deduplicated history in SQLite, applies hard location and experience filters, ranks postings with explainable local keyword evidence, writes reports and an employer-grouped digest, and can create one GitHub Issue per qualifying job.
+A Python job-discovery tool tailored for C++ / Linux / embedded systems roles. It scans configured public career sites, normalizes postings, stores a deduplicated history in SQLite, applies hard location and experience filters, ranks postings with explainable local keyword evidence, writes reports and a seven-day employer-grouped digest, and can create one GitHub Issue per qualifying job.
 
 ## Current capabilities
 
@@ -9,7 +9,7 @@ A Python job-discovery tool tailored for C++ / Linux / embedded systems roles. I
 - **Experience-aware matching** extracts explicit years-of-experience requirements and excludes requirements incompatible with the configured 2–5 year profile. Unknown requirements are not guessed.
 - **Local relevance scoring** using configured title, location, and skill evidence. The score is a keyword heuristic, not an ATS score or probability of getting an interview.
 - **SQLite persistence** with stable source/company/requisition identity, a match cache table, and scan-run history.
-- **CSV, JSON, Markdown, and employer-grouped digest reports** uploaded as a GitHub Actions artifact, with stable job identities for local review tracking.
+- **CSV, JSON, Markdown, and seven-day employer-grouped digest reports** uploaded as a GitHub Actions artifact, with stable job identities for local review tracking. Recent report snapshots are cached best-effort between scheduled runs.
 - **Optional GitHub Issues notifications** for jobs at or above the configured score threshold. Issues include a stable hidden marker so subsequent runs can avoid creating a second issue for the same job.
 - **Operational hardening** with bounded retries, `Retry-After`, per-host pacing and jitter, scan-health metrics/alerts, local review statuses, database/report retention, SQLite backup, dependency audits, and weekly Dependabot updates.
 - **CI** with Ruff, strict mypy checks, deterministic end-to-end tests, property-based fuzzing, and a 100% line-and-branch coverage gate; scheduled scans run on weekdays.
