@@ -55,6 +55,7 @@ jobs:
       - name: Validate configuration
         run: job-searcher --config config.yml --check-config
       - name: Restore recent report snapshots for weekly digest
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: reports/
@@ -69,6 +70,7 @@ jobs:
         run: job-searcher --config config.yml --output-dir reports
       - name: Save recent report snapshots
         if: success()
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: reports/
