@@ -14,7 +14,7 @@ from .config import AppConfig
 from .matching import extract_experience_range, is_allowed_location, is_experience_compatible, score_job
 from .models import Job
 from .notifications import GitHubIssuePublisher
-from .reporting import write_digest, write_reports
+from .reporting import prune_old_reports, write_digest, write_reports
 from .storage import JobStore
 
 LOG = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ class SearchOrchestrator:
         ai_initialization_failed = False
         try:
             retention_summary = self.store.prune_old_data(self.config.storage.retention_days)
+            old_reports_pruned = prune_old_reports(output_dir, self.config.search.report_retention_days)
             provider = self.config.matching.provider.casefold()
             if provider != "none":
                 try:
@@ -251,7 +252,7 @@ class SearchOrchestrator:
             )
             summary = {
                 "run_id": run_id,
-                "retention": retention_summary,
+                "retention": {**retention_summary, "reports": old_reports_pruned},
                 "sources": source_status,
                 "postings_fetched": fetched_count,
                 "new_identities": inserted,
