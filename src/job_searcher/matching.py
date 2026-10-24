@@ -2,6 +2,7 @@
 from __future__ import annotations
 import re
 from hashlib import sha256
+from typing import Any
 from .config import ProfileConfig
 from .models import Job
 
@@ -10,7 +11,7 @@ def _tokens(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9+#.]+", value.casefold()))
 
 
-def score_job(job: Job, profile: ProfileConfig) -> dict[str, object]:
+def score_job(job: Job, profile: ProfileConfig) -> dict[str, Any]:
     """Return transparent local score and evidence; never invent candidate qualifications."""
     title = job.title.casefold()
     location = job.location.casefold()
