@@ -95,10 +95,13 @@ class AIResumeMatcher:
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
         cleaned = text.strip()
-        start, end = cleaned.find("{"), cleaned.rfind("}")
-        if start < 0 or end < start:
-            raise ValueError("AI response did not contain a JSON object")
-        payload = json.loads(cleaned[start:end + 1])
+        try:
+            payload = json.loads(cleaned)
+        except json.JSONDecodeError:
+            start, end = cleaned.find("{"), cleaned.rfind("}")
+            if start < 0 or end < start:
+                raise ValueError("AI response did not contain a JSON object")
+            payload = json.loads(cleaned[start:end + 1])
         if not isinstance(payload, dict):
             raise ValueError("AI response must be a JSON object")
         return payload
