@@ -218,3 +218,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# Job Searcher local state and personal data
+data/
+reports/
+resume.pdf
+resume.txt
+resume_analysis.json
+resume_analysis.md
+job_results.json
+scan_report.json
+scan_report.md
