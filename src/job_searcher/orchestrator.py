@@ -55,6 +55,10 @@ class SearchOrchestrator:
                         )
                         for site, site_result in site_status.items():
                             source_status[f"workday:{site}"] = site_result
+                    elif adapter.name == "greenhouse" and not adapter.board_tokens:
+                        source_status[adapter.name] = "skipped: no Greenhouse boards configured"
+                    elif adapter.name == "lever" and not adapter.site_slugs:
+                        source_status[adapter.name] = "skipped: no Lever sites configured"
                     else:
                         source_status[adapter.name] = f"ok: {len(found)} postings"
                 except Exception as exc:
