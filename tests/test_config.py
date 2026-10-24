@@ -5,7 +5,7 @@ import yaml
 from pydantic import ValidationError
 
 from job_searcher.config import (
-    AppConfig, MatchingConfig, NotificationConfig, ProfileConfig, SearchConfig,
+    AppConfig, MatchingConfig, NotificationConfig, ProfileConfig, SearchConfig, StorageConfig,
 )
 
 
@@ -115,3 +115,22 @@ def test_notification_defaults_are_safe():
     config = NotificationConfig()
     assert config.github_issues is False
     assert config.repository == ""
+
+
+
+@pytest.mark.parametrize("retention_days", [0, 3651])
+def test_storage_retention_window_is_validated(retention_days):
+    with pytest.raises(ValidationError):
+        StorageConfig(retention_days=retention_days)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"input_cost_usd_per_million_tokens": -1},
+        {"output_cost_usd_per_million_tokens": 100001},
+    ],
+)
+def test_ai_cost_rates_are_validated(kwargs):
+    with pytest.raises(ValidationError):
+        MatchingConfig(**kwargs)
