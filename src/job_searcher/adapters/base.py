@@ -1,22 +1,30 @@
-"""Shared adapter contract and bounded HTTP retry helpers."""
+"""Shared adapter contract, host pacing, and bounded HTTP retry helpers."""
 from __future__ import annotations
 
+import random
+import threading
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from urllib.parse import urlparse
 
 import httpx
 
 from ..models import Job
+
+_HOST_LOCK = threading.Lock()
+_HOST_NEXT_REQUEST: dict[str, float] = {}
 
 
 class JobSource(ABC):
     name: str
     MAX_ATTEMPTS = 3
     MAX_RETRY_DELAY_SECONDS = 30.0
+    MIN_HOST_INTERVAL_SECONDS = 0.15
+    RETRY_JITTER_SECONDS = 0.25
 
     def __init__(self, timeout: float = 20) -> None:
-        # Retries are explicit below so HTTP status codes and Retry-After are handled too.
         self.client = httpx.Client(
             timeout=timeout,
             follow_redirects=True,
@@ -49,11 +57,35 @@ class JobSource(ABC):
                 return fallback
         return min(max(delay, 0.0), JobSource.MAX_RETRY_DELAY_SECONDS)
 
-    def get_json(self, url: str, params: dict[str, str] | None = None) -> object:
-        """Fetch JSON with bounded retries for transient network and HTTP failures."""
+    @staticmethod
+    def _wait_for_host(url: str) -> None:
+        """Pace requests to the same host across adapter instances in this process."""
+        host = urlparse(url).netloc.casefold()
+        if not host:
+            return
+        now = time.monotonic()
+        with _HOST_LOCK:
+            next_allowed = _HOST_NEXT_REQUEST.get(host, now)
+            wait = max(0.0, next_allowed - now)
+            _HOST_NEXT_REQUEST[host] = max(now, next_allowed) + JobSource.MIN_HOST_INTERVAL_SECONDS
+        if wait > 0:
+            time.sleep(wait)
+
+    def request_json(
+        self,
+        method: str,
+        url: str,
+        params: dict[str, str] | None = None,
+        json_body: dict[str, object] | None = None,
+    ) -> object:
+        """Perform a GET/POST JSON request with host pacing and bounded transient retries."""
         for attempt in range(self.MAX_ATTEMPTS):
+            self._wait_for_host(url)
             try:
-                response = self.client.get(url, params=params)
+                if method.upper() == "GET":
+                    response = self.client.get(url, params=params)
+                else:
+                    response = self.client.post(url, params=params, json=json_body)
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as exc:
@@ -66,6 +98,10 @@ class JobSource(ABC):
                 if attempt == self.MAX_ATTEMPTS - 1:
                     raise
                 delay = float(min(2**attempt, 8))
-            import time
-            time.sleep(delay)
+            jitter = random.uniform(0.0, min(self.RETRY_JITTER_SECONDS, delay * 0.1))
+            time.sleep(min(delay + jitter, self.MAX_RETRY_DELAY_SECONDS))
         raise RuntimeError("HTTP retries exhausted")
+
+    def get_json(self, url: str, params: dict[str, str] | None = None) -> object:
+        """Fetch JSON with bounded retries for transient network and HTTP failures."""
+        return self.request_json("GET", url, params=params)
