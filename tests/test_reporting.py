@@ -96,6 +96,8 @@ def test_report_retention_removes_only_old_scan_files(tmp_path):
     old_report = tmp_path / "scan-old.json"
     fresh_report = tmp_path / "scan-fresh.json"
     unrelated = tmp_path / "notes.txt"
+    directory = tmp_path / "scan-directory"
+    directory.mkdir()
     for path in (old_report, fresh_report, unrelated):
         path.write_text("data", encoding="utf-8")
     old_time = time.time() - 10 * 86400
