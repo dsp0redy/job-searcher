@@ -1,4 +1,4 @@
-"""Coordinates adapters, persistence, matching, notifications, and report generation."""
+"""Coordinates source adapters, local/AI matching, persistence, and reports."""
 from __future__ import annotations
 
 import logging
@@ -8,6 +8,7 @@ from typing import Any
 from .adapters.greenhouse import GreenhouseAdapter
 from .adapters.lever import LeverAdapter
 from .adapters.workday import WorkdayAdapter
+from .ai_matching import AIResumeMatcher, MatchResult
 from .config import AppConfig
 from .matching import score_job
 from .models import Job
@@ -26,15 +27,20 @@ class SearchOrchestrator:
     def run(self, output_dir: str = "reports") -> dict[str, Any]:
         run_id = self.store.start_run()
         timeout = self.config.search.request_timeout_seconds
-        adapters = [
-            GreenhouseAdapter(self.config.sources.greenhouse, timeout),
-            LeverAdapter(self.config.sources.lever, timeout),
-            WorkdayAdapter(self.config.sources.workday, timeout, self.config.search.max_pages_per_source),
-        ]
-        all_jobs: list[Job] = []
-        source_status: dict[str, str] = {}
+        ai_matcher: AIResumeMatcher | None = None
         publisher: GitHubIssuePublisher | None = None
         try:
+            provider = self.config.matching.provider.casefold()
+            if provider != "none":
+                ai_matcher = AIResumeMatcher(provider, timeout)
+
+            adapters = [
+                GreenhouseAdapter(self.config.sources.greenhouse, timeout),
+                LeverAdapter(self.config.sources.lever, timeout),
+                WorkdayAdapter(self.config.sources.workday, timeout, self.config.search.max_pages_per_source),
+            ]
+            all_jobs: list[Job] = []
+            source_status: dict[str, str] = {}
             for adapter in adapters:
                 try:
                     found = adapter.fetch()
@@ -47,9 +53,30 @@ class SearchOrchestrator:
                     adapter.close()
 
             inserted = self.store.upsert_jobs(all_jobs)
-            rows: list[dict[str, Any]] = []
-            notification_results: list[dict[str, Any]] = []
             cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.search.posted_within_days)
+            candidates: list[tuple[Job, dict[str, object]]] = []
+            for job in all_jobs:
+                if job.posted_at and job.posted_at < cutoff:
+                    continue
+                local_match = score_job(job, self.config.profile)
+                if int(local_match["score"]) >= self.config.search.minimum_local_score:
+                    candidates.append((job, local_match))
+
+            ai_results: dict[str, MatchResult] = {}
+            ai_failed: set[str] = set()
+            ai_deferred: set[str] = set()
+            if ai_matcher is not None:
+                ranked = sorted(candidates, key=lambda pair: int(pair[1]["score"]), reverse=True)
+                ai_limit = self.config.matching.max_ai_jobs_per_scan
+                selected = ranked[:ai_limit]
+                ai_deferred = {job.identity for job, _ in ranked[ai_limit:]}
+                batch_size = self.config.matching.max_jobs_per_ai_batch
+                for offset in range(0, len(selected), batch_size):
+                    batch = [job for job, _ in selected[offset:offset + batch_size]]
+                    results = ai_matcher.match_batch(batch)
+                    ai_results.update(results)
+                    ai_failed.update(job.identity for job in batch if job.identity not in results)
+
             notify_enabled = self.config.notifications.github_issues
             token = self.config.github_token()
             repository = self.config.notifications.repository or self.config.github_repository()
@@ -59,51 +86,71 @@ class SearchOrchestrator:
                 else:
                     publisher = GitHubIssuePublisher(repository, token, timeout)
 
-            try:
-                for job in all_jobs:
-                    # Keep undated postings; public boards frequently omit a trustworthy timestamp.
-                    if job.posted_at and job.posted_at < cutoff:
-                        continue
-                    match = score_job(job, self.config.profile)
-                    score = int(match["score"])
-                    if score < self.config.search.minimum_local_score:
-                        continue
-                    row = {
-                        "source": job.source,
-                        "source_id": job.source_id,
-                        "company": job.company,
-                        "title": job.title,
-                        "location": job.location,
-                        "url": str(job.url),
-                        "posted_at": job.posted_at.isoformat() if job.posted_at else None,
-                        "score": score,
-                        "reason": match["reason"],
-                        "title_hits": match["title_hits"],
-                        "location_hits": match["location_hits"],
-                        "skill_hits": match["skill_hits"],
-                        "notification": "not_eligible",
-                    }
-                    if notify_enabled and score >= self.config.matching.threshold:
-                        if publisher is None:
-                            row["notification"] = "not_configured"
-                        else:
-                            result = publisher.publish(
-                                job,
-                                score,
-                                str(match["reason"]),
-                                list(match["skill_hits"]),
-                            )
-                            row["notification"] = result["status"]
-                            notification_results.append({
-                                "company": job.company,
-                                "title": job.title,
-                                "score": score,
-                                **result,
-                            })
-                    rows.append(row)
-            finally:
-                if publisher is not None:
-                    publisher.close()
+            rows: list[dict[str, Any]] = []
+            notification_results: list[dict[str, Any]] = []
+            for job, local_match in candidates:
+                local_score = int(local_match["score"])
+                ai_result = ai_results.get(job.identity)
+                if ai_matcher is None:
+                    score = local_score
+                    reason = str(local_match["reason"])
+                    matched_skills = list(local_match["skill_hits"])
+                    missing_skills: list[str] = []
+                    improvements: list[str] = []
+                    ai_status = "disabled"
+                elif ai_result is not None:
+                    score = ai_result.score
+                    reason = ai_result.reason
+                    matched_skills = list(local_match["skill_hits"])
+                    missing_skills = ai_result.missing_skills
+                    improvements = ai_result.improvements
+                    ai_status = "matched"
+                else:
+                    score = local_score
+                    reason = str(local_match["reason"])
+                    matched_skills = list(local_match["skill_hits"])
+                    missing_skills = []
+                    improvements = []
+                    ai_status = "deferred" if job.identity in ai_deferred else "failed"
+
+                row: dict[str, Any] = {
+                    "source": job.source,
+                    "source_id": job.source_id,
+                    "company": job.company,
+                    "title": job.title,
+                    "location": job.location,
+                    "url": str(job.url),
+                    "posted_at": job.posted_at.isoformat() if job.posted_at else None,
+                    "score": score,
+                    "local_score": local_score,
+                    "ai_score": ai_result.score if ai_result else None,
+                    "ai_status": ai_status,
+                    "reason": reason,
+                    "title_hits": local_match["title_hits"],
+                    "location_hits": local_match["location_hits"],
+                    "skill_hits": matched_skills,
+                    "missing_skills": missing_skills,
+                    "improvements": improvements,
+                    "notification": "not_eligible",
+                }
+
+                ai_eligible = ai_matcher is None or ai_status == "matched"
+                if notify_enabled and ai_eligible and score >= self.config.matching.threshold:
+                    if publisher is None:
+                        row["notification"] = "not_configured"
+                    else:
+                        result = publisher.publish(job, score, reason, matched_skills)
+                        row["notification"] = result["status"]
+                        notification_results.append({
+                            "company": job.company,
+                            "title": job.title,
+                            "score": score,
+                            **result,
+                        })
+                elif notify_enabled and ai_matcher is not None and ai_status in {"failed", "deferred"}:
+                    row["notification"] = f"ai_{ai_status}"
+
+                rows.append(row)
 
             paths = write_reports(output_dir, run_id, rows)
             summary = {
@@ -112,6 +159,14 @@ class SearchOrchestrator:
                 "postings_fetched": len(all_jobs),
                 "new_identities": inserted,
                 "qualified_candidates": len(rows),
+                "matching": provider if ai_matcher else "deterministic local scoring",
+                "ai": {
+                    "enabled": ai_matcher is not None,
+                    "scored": len(ai_results),
+                    "failed": len(ai_failed),
+                    "deferred_by_scan_limit": len(ai_deferred),
+                    "max_jobs_per_scan": self.config.matching.max_ai_jobs_per_scan,
+                },
                 "match_threshold_for_notifications": self.config.matching.threshold,
                 "notifications": {
                     "enabled": notify_enabled,
@@ -122,7 +177,6 @@ class SearchOrchestrator:
                     "results": notification_results,
                 },
                 "reports": [str(path) for path in paths],
-                "matching": "deterministic local scoring; no AI provider configured",
             }
             status = "success" if any(value.startswith("ok:") for value in source_status.values()) else "no_sources_succeeded"
             self.store.finish_run(run_id, status, summary)
@@ -130,3 +184,8 @@ class SearchOrchestrator:
         except Exception as exc:
             self.store.finish_run(run_id, "failed", {"error_type": type(exc).__name__})
             raise
+        finally:
+            if publisher is not None:
+                publisher.close()
+            if ai_matcher is not None:
+                ai_matcher.close()
