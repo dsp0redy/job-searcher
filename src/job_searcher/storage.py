@@ -12,6 +12,8 @@ LOG = logging.getLogger(__name__)
 
 
 class JobStore:
+    CURRENT_SCHEMA_VERSION = 1
+
     def __init__(self, path: str) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -26,6 +28,12 @@ class JobStore:
 
     def _initialize(self) -> None:
         with self._connect() as db:
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+            if version > self.CURRENT_SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Database schema version {version} is newer than supported version "
+                    f"{self.CURRENT_SCHEMA_VERSION}; upgrade the application before opening this database"
+                )
             db.execute("PRAGMA journal_mode = WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -51,6 +59,7 @@ class JobStore:
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            db.execute(f"PRAGMA user_version = {self.CURRENT_SCHEMA_VERSION}")
 
     def upsert_jobs(self, jobs: list[Job]) -> int:
         """Insert/update postings; return number of identities not previously stored."""
