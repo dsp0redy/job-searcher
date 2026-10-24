@@ -2,8 +2,9 @@
 from pathlib import Path
 from typing import Any
 import os
+
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ProfileConfig(BaseModel):
@@ -12,6 +13,13 @@ class ProfileConfig(BaseModel):
     minimum_experience_years: float | None = Field(default=None, ge=0, le=80)
     maximum_experience_years: float | None = Field(default=None, ge=0, le=80)
     skills: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_experience_range(self) -> "ProfileConfig":
+        if (self.minimum_experience_years is not None and self.maximum_experience_years is not None
+                and self.minimum_experience_years > self.maximum_experience_years):
+            raise ValueError("Minimum experience cannot exceed maximum experience")
+        return self
 
 
 class SearchConfig(BaseModel):
@@ -27,9 +35,10 @@ class StorageConfig(BaseModel):
 
 
 class MatchingConfig(BaseModel):
-    provider: str = "none"
+    provider: str = Field(default="none", pattern="^(none|gemini|claude)$")
     threshold: int = Field(default=65, ge=0, le=100)
     max_jobs_per_ai_batch: int = Field(default=8, ge=1, le=30)
+    max_ai_jobs_per_scan: int = Field(default=40, ge=1, le=200)
 
 
 class SourcesConfig(BaseModel):
@@ -59,12 +68,12 @@ class AppConfig(BaseModel):
             data = {}
         if not isinstance(data, dict):
             raise ValueError("Configuration root must be a YAML mapping")
-        cfg = cls.model_validate(data)
-        if cfg.profile.minimum_experience_years is not None and cfg.profile.maximum_experience_years is not None:
-            if cfg.profile.minimum_experience_years > cfg.profile.maximum_experience_years:
-                raise ValueError("Minimum experience cannot exceed maximum experience")
-        return cfg
+        return cls.model_validate(data)
 
     @staticmethod
     def github_token() -> str | None:
         return os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+
+    @staticmethod
+    def github_repository() -> str:
+        return os.getenv("GITHUB_REPOSITORY", "")

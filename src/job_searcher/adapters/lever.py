@@ -1,5 +1,6 @@
 """Adapter for public Lever postings."""
 from __future__ import annotations
+from datetime import datetime, timezone
 from urllib.parse import quote
 from .base import JobSource
 from ..models import Job
@@ -26,9 +27,16 @@ class LeverAdapter(JobSource):
                     location = categories.get("location") or "Unknown"
                     description = "\n".join(str(item.get(key) or "") for key in
                         ("descriptionPlain", "additionalPlain"))
+                    created_at = item.get("createdAt")
+                    posted_at = None
+                    if isinstance(created_at, (int, float)) and not isinstance(created_at, bool):
+                        try:
+                            posted_at = datetime.fromtimestamp(float(created_at) / 1000, tz=timezone.utc)
+                        except (OverflowError, OSError, ValueError):
+                            posted_at = None
                     jobs.append(Job(source=self.name, source_id=str(item["id"]), company=slug,
                         title=str(item["text"]), location=str(location), url=item["hostedUrl"],
-                        description=description, posted_at=None))
+                        description=description, posted_at=posted_at))
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Lever site %s failed; continuing", slug)

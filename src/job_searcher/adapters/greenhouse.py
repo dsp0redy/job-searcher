@@ -1,6 +1,5 @@
 """Adapter for public Greenhouse job boards."""
 from __future__ import annotations
-from typing import Any
 from urllib.parse import quote
 from .base import JobSource
 from ..models import Job

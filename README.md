@@ -1,73 +1,87 @@
 # Job Searcher
 
-A modular, low-token job discovery and matching platform. The initial repository is empty; this commit establishes the product direction and architecture. The implementation will use source adapters, deterministic filtering, normalized job records, persistent deduplication, optional AI ranking, and GitHub-based reporting.
+A Python job-discovery tool tailored for C++ / Linux / embedded systems roles. It scans configured public career sites, normalizes postings, stores a deduplicated history in SQLite, ranks postings with explainable local keyword evidence, writes reports, and can create one GitHub Issue per qualifying job.
 
-## Design principles
-- Source adapters are isolated and independently testable.
-- Prefer official public career-site APIs/feeds; do not bypass logins, CAPTCHAs, or access controls.
-- Normalize all postings into one schema and deduplicate by source + requisition/URL.
-- Apply cheap local filters before any optional AI calls.
-- Persist state in SQLite; keep credentials in environment variables/GitHub Secrets.
-- Treat coverage as adapter-based, not a promise to crawl every job site.
+## Current capabilities
+
+- **Workday, Greenhouse, and Lever adapters** using public career-site endpoints. Workday support covers compatible `*.myworkdayjobs.com` sites, not every employer's careers platform.
+- **Local relevance scoring** using configured title, location, and skill evidence. The score is a keyword heuristic, not an ATS score or probability of getting an interview.
+- **SQLite persistence** with stable source/company/requisition identity, a match cache table, and scan-run history.
+- **CSV, JSON, and Markdown reports** uploaded as a GitHub Actions artifact.
+- **Optional GitHub Issues notifications** for jobs at or above the configured score threshold. Issues include a stable hidden marker so subsequent runs can avoid creating a second issue for the same job.
+- **CI** with Ruff linting and pytest coverage; scheduled scans run on weekdays.
+
+Optional batch-based AI resume matching is available through **Gemini** or **Claude**. Local keyword scoring remains the prefilter; AI scoring runs only for the highest-ranked candidates, with a configurable per-scan cap and SQLite caching keyed by job, resume, provider, and model. Leave `matching.provider: none` for local-only mode.
 
 ## Architecture
+
 ```mermaid
 flowchart TD
-  A[CLI / GitHub Actions schedule] --> B[Search Orchestrator]
-  B --> C[Source Adapter Registry]
-  C --> D[Workday Adapter]
-  C --> E[Greenhouse Adapter]
-  C --> F[Lever Adapter]
-  D & E & F --> G[Normalize and Validate]
-  G --> H[Deduplicate: SQLite]
-  H --> I[Local Eligibility Filters]
-  I --> J[Optional AI Match Ranker]
-  J --> K[Report / GitHub Issues]
-  K --> L[Persist run state and cache]
+  A[CLI or GitHub Actions] --> B[Search orchestrator]
+  B --> C[Workday / Greenhouse / Lever adapters]
+  C --> D[Normalize into Job model]
+  D --> E[SQLite persistence and deduplication]
+  E --> F[Posting-age filter]
+  F --> G[Explainable local matching]
+  G --> H[CSV / JSON / Markdown reports]
+  G --> I{Score meets issue threshold?}
+  I -->|Yes and enabled| J[GitHub Issues publisher]
+  I -->|No or disabled| K[Report only]
 ```
 
-## Sequence
-```mermaid
-sequenceDiagram
-  participant S as Scheduler/CLI
-  participant O as Orchestrator
-  participant A as Adapters
-  participant D as SQLite
-  participant M as Matcher
-  participant R as Reporter
-  S->>O: start scan(config)
-  O->>A: fetch configured sources
-  A-->>O: normalized job candidates
-  O->>D: check and upsert identities
-  D-->>O: unseen candidates
-  O->>O: local filters and ranking
-  opt AI enabled and candidate qualifies
-    O->>M: compact resume + selected JD fields
-    M-->>O: validated score and rationale
-  end
-  O->>R: publish summary and artifacts
-  O->>D: persist run results/cache
-  R-->>S: run outcome
+## Quick start
+
+Requirements: Python 3.11 or newer.
+
+```bash
+python -m venv .venv
+# Windows PowerShell: .venv\\Scripts\\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+python -m pip install -e ".[dev]"
+job-searcher --config config.yml --check-config
+job-searcher --config config.yml --output-dir reports
+pytest
+ruff check src tests
 ```
 
-## Planned structure
-```text
-src/job_searcher/
-  cli.py                 CLI entry point
-  config.py              Validated configuration
-  models.py              Normalized Job model
-  orchestrator.py        Pipeline coordination
-  storage/sqlite.py      Persistence and deduplication
-  adapters/base.py       Adapter contract
-  adapters/greenhouse.py Greenhouse public job boards
-  adapters/lever.py      Lever public postings
-  adapters/workday.py    Workday career sites
-  matching/local.py      Token-efficient local relevance score
-  reporting/markdown.py  Reports
- tests/                  Unit and adapter tests
- docs/                   Architecture and operations
- .github/workflows/      Scheduled scans and CI
+The checked-in `config.yml` is pre-populated with a set of Workday career-site URLs and a profile for C++ / Linux / embedded roles. Employer URLs can change; failures are logged per site and do not stop other adapters. Add Greenhouse board tokens or Lever site slugs to their corresponding lists when needed.
+
+The checked-in config defaults to Gemini AI scoring. Add `GEMINI_API_KEY` and `RESUME_TEXT` as GitHub Actions Secrets before running the scheduled workflow. `RESUME_TEXT` should contain the plain text extracted from your updated PDF; do not commit the PDF or put the binary PDF in a secret. Locally, you can instead set `RESUME_FILE` to an ignored PDF or text file path. To use Claude instead, set `matching.provider: claude` and add `ANTHROPIC_API_KEY`; to use local-only scoring, set `matching.provider: none`. The default models are `gemini-3.8-flash` and `claude-haiku-5-5`; you can override them with `GEMINI_MODEL` and `CLAUDE_MODEL`. The scan is capped at 40 AI-scored jobs by default, in batches of 8. Successful scores are cached; failed batches are retried on a later run.
+
+## GitHub Actions and issue notifications
+
+The scheduled workflow runs on weekdays at 02:17 UTC (07:47 India Standard Time, subject to GitHub scheduling delays) and can be started manually from **Actions → Scheduled job scan → Run workflow**. It installs the package, validates configuration, scans sources, and uploads reports for 14 days.
+
+The checked-in configuration enables GitHub Issues notifications. The workflow passes the built-in `GITHUB_TOKEN` and repository name and declares `issues: write`. If you run locally, set:
+
+```bash
+# Linux/macOS
+export GITHUB_TOKEN="a-token-with-issues-write-permission"
+export GITHUB_REPOSITORY="owner/repository"
 ```
 
-## Status
-Bootstrap only. See `docs/ROADMAP.md` for the phased implementation plan. Never commit resume files, API keys, or generated personal reports.
+On Windows PowerShell, use `$env:GITHUB_TOKEN="..."` and `$env:GITHUB_REPOSITORY="owner/repository"`. Never commit tokens. If no token or repository is configured, the scan still creates reports and records notifications as not configured.
+
+An issue is considered only when the local score reaches `matching.threshold` (65 by default). Existing issues are identified by a hidden stable marker. GitHub does not provide an atomic create-if-absent operation, so an external concurrent issue creator could still race; the scheduled workflow itself serializes scans.
+
+## Configuration
+
+Edit `config.yml`:
+
+- `profile.titles`, `profile.locations`, and `profile.skills` define relevance evidence.
+- `search.posted_within_days` excludes postings with a known older timestamp. If a source does not expose a parseable date, the posting is retained rather than silently discarded.
+- `search.max_pages_per_source` limits listing pages per configured source/site.
+- `matching.threshold` controls issue eligibility; it does not control whether a posting appears in reports.
+- `notifications.github_issues` enables or disables issue creation.
+- `storage.path` sets the local SQLite database path.
+
+Workday detail requests are capped per career site to reduce load; postings beyond that detail cap may have only listing-level fields. Check the report and original posting before applying.
+
+## Privacy and limits
+
+- Never commit real resumes, tokens, `.env` files, SQLite databases, or generated personal reports.
+- In AI mode, resume text and selected job-description fields are sent to the configured AI provider for matching. Review that provider's privacy and retention terms before enabling it.
+- Public career APIs can change, rate-limit, or return incomplete results. This tool is not a universal crawler; it does not bypass authentication, CAPTCHAs, or access controls.
+- Review each job description and employer requirements manually. A high keyword score does not guarantee suitability.
+
+See [Setup and operations](docs/SETUP.md) and [Roadmap](docs/ROADMAP.md).
