@@ -80,7 +80,7 @@ class SearchOrchestrator:
             all_jobs = list(unique_jobs.values())
             inserted = self.store.upsert_jobs(all_jobs)
             cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.search.posted_within_days)
-            candidates: list[tuple[Job, dict[str, object]]] = []
+            candidates: list[tuple[Job, dict[str, Any]]] = []
             for job in all_jobs:
                 if job.posted_at and job.posted_at < cutoff:
                     continue
