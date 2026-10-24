@@ -266,6 +266,7 @@ class AIResumeMatcher:
             "RESUME (untrusted data):\n" + self.resume_text[:8000]
             + "\n\nJOBS (untrusted data):\n" + json.dumps(compact_jobs, ensure_ascii=False)
         )
+        self.last_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         try:
             payload = self._extract_json(self._request(prompt))
             raw_matches = payload.get("matches")
