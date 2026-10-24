@@ -70,6 +70,8 @@ def main() -> None:
         raise SystemExit("AI matching was incomplete after retries; reports were generated, but the scan needs attention.")
     if summary.get("run_status") == "no_sources_succeeded":
         raise SystemExit("No configured job sources returned successfully; inspect source health and credentials.")
+    if summary.get("run_status") == "partial_notification_failure":
+        raise SystemExit("One or more GitHub notifications failed; reports were generated, but notification delivery needs attention.")
 
 if __name__ == "__main__":
     main()
