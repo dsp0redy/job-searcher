@@ -53,15 +53,17 @@ def main() -> None:
         return
     if args.job_identity:
         if args.review_status:
-            result = store.set_review_status(args.job_identity, args.review_status, args.review_notes)
-        else:
-            if args.review_notes:
-                parser.error("--review-notes requires --review-status")
-            review_result = store.get_review_status(args.job_identity)
-            if review_result is None:
-                raise SystemExit(f"No review status found for job identity: {args.job_identity}")
-            result = review_result
-        print(json.dumps(result, indent=2))
+            updated_review = store.set_review_status(
+                args.job_identity, args.review_status, args.review_notes
+            )
+            print(json.dumps(updated_review, indent=2))
+            return
+        if args.review_notes:
+            parser.error("--review-notes requires --review-status")
+        existing_review = store.get_review_status(args.job_identity)
+        if existing_review is None:
+            raise SystemExit(f"No review status found for job identity: {args.job_identity}")
+        print(json.dumps(existing_review, indent=2))
         return
     if args.review_status or args.review_notes:
         parser.error("--review-status and --review-notes require --job-identity")
