@@ -31,7 +31,7 @@ def load_resume_text(resume_text: str = "", resume_file: str = "") -> str:
         if path.suffix.casefold() == ".pdf":
             from pypdf import PdfReader
 
-            text = "\\n".join(
+            text = "\n".join(
                 page.extract_text() or "" for page in PdfReader(str(path)).pages
             ).strip()
         else:

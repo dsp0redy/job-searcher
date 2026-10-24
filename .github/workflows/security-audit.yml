@@ -1,6 +1,10 @@
 name: Dependency security audit
 
 on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - ".github/workflows/security-audit.yml"
   workflow_dispatch:
   schedule:
     - cron: "31 5 * * 1"
