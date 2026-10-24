@@ -49,14 +49,16 @@ def main() -> None:
         print("Configuration valid")
         print(json.dumps(config.model_dump(), indent=2))
         return
-    store = JobStore(config.storage.path)
     if args.backup_db:
+        store = JobStore(config.storage.path)
         print(json.dumps({"backup": store.backup_to(args.backup_db)}, indent=2))
         return
     if args.prune_now:
+        store = JobStore(config.storage.path)
         print(json.dumps({"retention": store.prune_old_data(config.storage.retention_days)}, indent=2))
         return
     if args.job_identity:
+        store = JobStore(config.storage.path)
         if args.review_status:
             updated_review = store.set_review_status(
                 args.job_identity, args.review_status, args.review_notes
