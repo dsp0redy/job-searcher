@@ -25,6 +25,8 @@ def main() -> None:
     print(json.dumps(summary, indent=2))
     if summary.get("run_status") == "partial_ai_failure":
         raise SystemExit("AI matching was incomplete after retries; reports were generated, but the scan needs attention.")
+    if summary.get("run_status") == "no_sources_succeeded":
+        raise SystemExit("No configured job sources returned successfully; inspect source health and credentials.")
 
 if __name__ == "__main__":
     main()
