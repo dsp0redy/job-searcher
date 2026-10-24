@@ -27,7 +27,7 @@ class GreenhouseAdapter(JobSource):
                     jobs.append(Job(source=self.name, source_id=str(item["id"]), company=board,
                         title=str(item["title"]), location=str(location.get("name", "Unknown")),
                         url=item["absolute_url"], description=str(item.get("content") or ""),
-                        posted_at=item.get("updated_at")))
+                        posted_at=None  # updated_at is not the original publication date))
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Greenhouse board %s failed; continuing", board)
