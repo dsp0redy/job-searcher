@@ -399,3 +399,51 @@ def test_cache_key_changes_when_job_description_changes(monkeypatch):
     finally:
         matcher.close()
 
+def test_extract_json_rejects_unclosed_object():
+    with pytest.raises(ValueError):
+        AIResumeMatcher._extract_json("prefix {")
+
+
+def test_pdf_resume_file_is_read_and_empty_text_rejected(monkeypatch, tmp_path):
+    from pypdf import PdfWriter
+
+    configure_ai(monkeypatch)
+    pdf_path = tmp_path / "resume.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    with pdf_path.open("wb") as stream:
+        writer.write(stream)
+    monkeypatch.delenv("RESUME_TEXT", raising=False)
+    monkeypatch.setenv("RESUME_FILE", str(pdf_path))
+    with pytest.raises(ValueError, match="RESUME_TEXT or RESUME_FILE"):
+        AIResumeMatcher("gemini")
+
+
+def test_match_batch_handles_provider_payload_shape_errors(monkeypatch):
+    configure_ai(monkeypatch)
+    matcher = AIResumeMatcher("gemini")
+    monkeypatch.setattr(matcher, "_request", lambda _: '{"matches": []}')
+    try:
+        assert matcher.match_batch([make_job()]) == {}
+    finally:
+        matcher.close()
+
+
+def test_retryable_server_error_raises_after_final_attempt(monkeypatch):
+    configure_ai(monkeypatch)
+    matcher = AIResumeMatcher("gemini")
+    calls = 0
+    def post(url, **kwargs):
+        nonlocal calls
+        calls += 1
+        request = httpx.Request("POST", url)
+        raise httpx.HTTPStatusError("server error", request=request, response=httpx.Response(503, request=request))
+    monkeypatch.setattr(matcher.client, "post", post)
+    monkeypatch.setattr("job_searcher.ai_matching.time.sleep", lambda _: None)
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            matcher._post_with_retries("https://example.com")
+        assert calls == 3
+    finally:
+        matcher.close()
+
