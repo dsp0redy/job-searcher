@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -103,3 +104,26 @@ def test_cache_key_changes_when_resume_text_changes(monkeypatch: pytest.MonkeyPa
         assert second.cache_key(job) != first_key
     finally:
         second.close()
+
+
+def test_post_retries_transient_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("RESUME_TEXT", "C++ Linux engineer")
+    matcher = AIResumeMatcher("gemini")
+    calls = 0
+
+    def flaky_post(url: str, **kwargs: object) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ReadTimeout("temporary timeout")
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(matcher.client, "post", flaky_post)
+    monkeypatch.setattr("job_searcher.ai_matching.time.sleep", lambda _: None)
+    try:
+        response = matcher._post_with_retries("https://example.com", json={})
+        assert response.status_code == 200
+        assert calls == 2
+    finally:
+        matcher.close()
