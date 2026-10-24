@@ -55,7 +55,9 @@ class SearchOrchestrator:
                 try:
                     found = adapter.fetch()
                     all_jobs.extend(found)
-                    if adapter.name == "workday":
+                    if adapter.name == "workday" and not self.config.sources.workday:
+                        source_status[adapter.name] = "skipped: no Workday sites configured"
+                    elif adapter.name == "workday":
                         site_status = getattr(adapter, "site_status", {})
                         successful_sites = sum(value.startswith("ok:") for value in site_status.values())
                         source_status[adapter.name] = (
