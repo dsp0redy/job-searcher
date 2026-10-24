@@ -1,4 +1,4 @@
-"""Optional batch-based resume/job matching using Gemini or Claude APIs."""
+"""Optional batch-based resume/job matching using configurable AI APIs."""
 from __future__ import annotations
 
 import json
@@ -30,16 +30,15 @@ class AIResumeMatcher:
 
     def __init__(self, provider: str, timeout: float = 75) -> None:
         self.provider = provider.casefold()
-        supported_providers = {"gemini", "claude", "openai_compatible", "ollama"}
+        supported_providers = {"gemini", "claude", "openai_compatible"}
         if self.provider not in supported_providers:
             raise ValueError(
-                "AI provider must be one of: gemini, claude, openai_compatible, ollama, none"
+                "AI provider must be one of: gemini, claude, openai_compatible, none"
             )
         env_names = {
             "gemini": "GEMINI_API_KEY",
             "claude": "ANTHROPIC_API_KEY",
             "openai_compatible": "AI_API_KEY",
-            "ollama": "",
         }
         env_name = env_names[self.provider]
         self.api_key = os.getenv(env_name, "").strip() if env_name else ""
@@ -50,8 +49,6 @@ class AIResumeMatcher:
             raise ValueError(
                 "matching.provider is 'openai_compatible' but AI_BASE_URL is not set"
             )
-        if self.provider == "ollama":
-            self.base_url = self.base_url or "http://127.0.0.1:11434/v1"
         self.resume_text = os.getenv("RESUME_TEXT", "").strip()
         resume_file = os.getenv("RESUME_FILE", "").strip()
         if not self.resume_text and resume_file:
@@ -70,11 +67,12 @@ class AIResumeMatcher:
         model_env = {
             "gemini": ("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             "claude": ("CLAUDE_MODEL", "claude-haiku-5-5"),
-            "openai_compatible": ("AI_MODEL", "your-model-name"),
-            "ollama": ("AI_MODEL", "qwen2.5:3b"),
+            "openai_compatible": ("AI_MODEL", ""),
         }
         model_env_name, default_model = model_env[self.provider]
         self.model = os.getenv(model_env_name, default_model).strip()
+        if self.provider == "openai_compatible" and not self.model:
+            raise ValueError("AI_MODEL must be set for the openai_compatible provider")
 
     def close(self) -> None:
         self.client.close()
@@ -150,7 +148,7 @@ class AIResumeMatcher:
                 if block.get("type") == "text"
             )
 
-        # OpenAI-compatible APIs include Groq, OpenRouter, and Ollama's local API.
+        # OpenAI-compatible APIs include Groq and OpenRouter.
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
