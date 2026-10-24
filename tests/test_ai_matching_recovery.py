@@ -119,3 +119,27 @@ def test_ai_matching_returns_recovered_matches_if_correction_fails(monkeypatch) 
     assert calls == 2
     assert list(results) == [job.identity]
     assert results[job.identity].score == 80
+
+
+def test_http_provider_error_logs_do_not_expose_api_key(monkeypatch, caplog) -> None:
+    import logging
+
+    import httpx
+
+    _configure(monkeypatch)
+    matcher = AIResumeMatcher("gemini")
+    request = httpx.Request(
+        "POST", "https://generativelanguage.googleapis.com/v1beta/models/test:generateContent?key=super-secret-key"
+    )
+    response = httpx.Response(400, request=request)
+    error = httpx.HTTPStatusError("Bad Request", request=request, response=response)
+    monkeypatch.setattr(matcher, "_request", lambda prompt: (_ for _ in ()).throw(error))
+    try:
+        with caplog.at_level(logging.WARNING, logger="job_searcher.ai_matching"):
+            results = matcher.match_batch([_job("REQ-HTTP")])
+    finally:
+        matcher.close()
+
+    assert results == {}
+    assert "provider HTTP 400" in caplog.text
+    assert "super-secret-key" not in caplog.text

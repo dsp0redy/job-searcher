@@ -323,9 +323,18 @@ class AIResumeMatcher:
                 )
             except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError, ValidationError) as exc:
                 last_error = exc
+                # HTTPStatusError includes the request URL in its string form. Gemini
+                # puts its API key in that URL, so never log the exception text for HTTP errors.
+                detail = (
+                    f"provider HTTP {exc.response.status_code}"
+                    if isinstance(exc, httpx.HTTPStatusError)
+                    else str(exc)[:240]
+                    if isinstance(exc, ValueError)
+                    else "request or response validation error"
+                )
                 LOG.warning(
                     "AI matching response failed validation on attempt %d/2 (%s): %s",
-                    attempt + 1, type(exc).__name__, str(exc)[:240],
+                    attempt + 1, type(exc).__name__, detail,
                 )
 
         LOG.warning(
