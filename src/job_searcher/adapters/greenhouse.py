@@ -10,12 +10,14 @@ class GreenhouseAdapter(JobSource):
     def __init__(self, board_tokens: list[str], timeout: float = 20) -> None:
         super().__init__(timeout)
         self.board_tokens = board_tokens
+        self.site_status: dict[str, str] = {}
     def fetch(self) -> list[Job]:
         jobs: list[Job] = []
         for board in self.board_tokens:
             if not board.strip():
                 continue
             url = f"https://boards-api.greenhouse.io/v1/boards/{quote(board, safe='')}/jobs"
+            before_count = len(jobs)
             try:
                 data = self.get_json(url, {"content": "true"})
                 if not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
@@ -29,7 +31,9 @@ class GreenhouseAdapter(JobSource):
                         url=item["absolute_url"], description=str(item.get("content") or ""),
                         posted_at=None,  # updated_at is not the original publication date
                     ))
-            except Exception:
+                self.site_status[board] = f"ok: {len(jobs) - before_count} postings"
+            except Exception as exc:
+                self.site_status[board] = f"failed: {type(exc).__name__}"
                 import logging
                 logging.getLogger(__name__).exception("Greenhouse board %s failed; continuing", board)
         return jobs
