@@ -42,7 +42,7 @@ def is_allowed_location(location: str, profile: ProfileConfig) -> bool:
 def extract_experience_range(text: str) -> tuple[float | None, float | None]:
     """Extract the first explicit years-of-experience range without guessing when absent."""
     range_match = re.search(
-        r"(?<!\\d)(\\d{1,2})\\s*(?:-|to)\\s*(\\d{1,2})\\s*(?:years?|yrs?)\\b",
+        r"(?<!\d)(\d{1,2})\s*(?:-|to)\s*(\d{1,2})\s*(?:years?|yrs?)\b",
         text,
         re.IGNORECASE,
     )
@@ -51,22 +51,31 @@ def extract_experience_range(text: str) -> tuple[float | None, float | None]:
         if minimum <= maximum:
             return minimum, maximum
         return None, None
+
     minimum_match = re.search(
-        r"(?:(?:at least|minimum(?: of)?|over|more than)\\s*)?(\\d{1,2})\\s*\\+?\\s*(?:years?|yrs?)\\b"
-        r"(?:\\s+of)?\\s+(?:relevant\\s+)?experience\\b|"
-        r"(?:at least|minimum(?: of)?|over|more than)\\s*(\\d{1,2})\\s*\\+?\\s*(?:years?|yrs?)\\b",
+        r"\b(?:at least|minimum(?: of)?|over|more than)\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b",
         text,
         re.IGNORECASE,
     )
     if minimum_match:
-        value = next((group for group in minimum_match.groups() if group is not None), None)
-        if value is not None:
-            return float(value), None
-    plus_match = re.search(r"(?<!\\d)(\\d{1,2})\\s*\\+\\s*(?:years?|yrs?)\\b", text, re.IGNORECASE)
+        return float(minimum_match.group(1)), None
+
+    experience_match = re.search(
+        r"(?<!\d)(\d{1,2})\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:relevant\s+)?experience\b",
+        text,
+        re.IGNORECASE,
+    )
+    if experience_match:
+        return float(experience_match.group(1)), None
+
+    plus_match = re.search(
+        r"(?<!\d)(\d{1,2})\s*\+\s*(?:years?|yrs?)\b",
+        text,
+        re.IGNORECASE,
+    )
     if plus_match:
         return float(plus_match.group(1)), None
     return None, None
-
 
 def is_experience_compatible(
     minimum_required: float | None,
