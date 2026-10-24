@@ -303,3 +303,14 @@ def test_notifications_enabled_without_credentials_do_not_abort_scan(tmp_path, m
     summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
     assert summary["notifications"]["not_configured"] is True
 
+def test_duplicate_postings_are_scored_once_but_raw_fetch_count_is_preserved(tmp_path, monkeypatch):
+    job = make_job()
+    duplicate = job.model_copy(update={"description": "Updated description"})
+    install_sources(monkeypatch, [job, duplicate])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["postings_fetched"] == 2
+    assert summary["new_identities"] == 1
+    assert summary["qualified_candidates"] == 1
+    with SearchOrchestrator(make_config(tmp_path)).store._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+
