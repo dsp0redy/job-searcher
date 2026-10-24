@@ -160,7 +160,14 @@ class SearchOrchestrator:
                     if publisher is None:
                         row["notification"] = "not_configured"
                     else:
-                        result = publisher.publish(job, score, reason, matched_skills)
+                        result = publisher.publish(
+                            job,
+                            score,
+                            reason,
+                            matched_skills,
+                            missing_skills=missing_skills,
+                            improvements=improvements,
+                        )
                         row["notification"] = result["status"]
                         notification_results.append({
                             "company": job.company,
