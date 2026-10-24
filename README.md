@@ -11,7 +11,7 @@ A Python job-discovery tool tailored for C++ / Linux / embedded systems roles. I
 - **Optional GitHub Issues notifications** for jobs at or above the configured score threshold. Issues include a stable hidden marker so subsequent runs can avoid creating a second issue for the same job.
 - **CI** with Ruff linting and pytest coverage; scheduled scans run on weekdays.
 
-AI resume matching is **not implemented yet** in this branch. The configuration keeps an AI-provider section for future extension, but the current runtime uses local deterministic matching only.
+Optional batch-based AI resume matching is available through **Gemini** or **Claude**. Local keyword scoring remains the prefilter; AI scoring runs only for the highest-ranked candidates, with a configurable per-scan cap and SQLite caching keyed by job, resume, provider, and model. Leave `matching.provider: none` for local-only mode.
 
 ## Architecture
 
@@ -46,6 +46,8 @@ ruff check src tests
 
 The checked-in `config.yml` is pre-populated with a set of Workday career-site URLs and a profile for C++ / Linux / embedded roles. Employer URLs can change; failures are logged per site and do not stop other adapters. Add Greenhouse board tokens or Lever site slugs to their corresponding lists when needed.
 
+To enable AI scoring, set `matching.provider` to `gemini` or `claude` and supply `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` plus `RESUME_TEXT` through environment variables or GitHub Actions Secrets. The default models are `gemini-3.8-flash` and `claude-haiku-5-5`; you can override them with `GEMINI_MODEL` and `CLAUDE_MODEL`. The scan is capped at 40 AI-scored jobs by default, in batches of 8. Successful scores are cached; failed batches are retried on a later run.
+
 ## GitHub Actions and issue notifications
 
 The scheduled workflow runs on weekdays at 02:17 UTC (07:47 India Standard Time, subject to GitHub scheduling delays) and can be started manually from **Actions → Scheduled job scan → Run workflow**. It installs the package, validates configuration, scans sources, and uploads reports for 14 days.
@@ -78,7 +80,7 @@ Workday detail requests are capped per career site to reduce load; postings beyo
 ## Privacy and limits
 
 - Never commit real resumes, tokens, `.env` files, SQLite databases, or generated personal reports.
-- The tool currently does not parse a resume or make AI-based resume-to-job judgments.
+- In AI mode, resume text and selected job-description fields are sent to the configured AI provider for matching. Review that provider's privacy and retention terms before enabling it.
 - Public career APIs can change, rate-limit, or return incomplete results. This tool is not a universal crawler; it does not bypass authentication, CAPTCHAs, or access controls.
 - Review each job description and employer requirements manually. A high keyword score does not guarantee suitability.
 
