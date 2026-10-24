@@ -6,6 +6,7 @@ import logging
 from .ai_matching import load_resume_text
 from .config import AppConfig
 from .orchestrator import SearchOrchestrator
+from .storage import JobStore
 
 
 def main() -> None:
@@ -15,6 +16,11 @@ def main() -> None:
     parser.add_argument("--check-config", action="store_true", help="Validate config without network calls")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument("--preview-resume", action="store_true", help="Preview extracted resume text locally; no provider calls are made")
+    parser.add_argument("--backup-db", metavar="PATH", help="Create a consistent SQLite backup and exit")
+    parser.add_argument("--job-identity", help="Job identity from a JSON report; inspect or update its local review status")
+    parser.add_argument("--review-status", choices=["saved", "applied", "rejected", "stale"], help="Set review status for --job-identity")
+    parser.add_argument("--review-notes", default="", help="Optional private local review notes (max 2000 characters)")
+    parser.add_argument("--prune-now", action="store_true", help="Prune persisted data using configured retention and exit")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -38,6 +44,26 @@ def main() -> None:
         print("Configuration valid")
         print(json.dumps(config.model_dump(), indent=2))
         return
+    store = JobStore(config.storage.path)
+    if args.backup_db:
+        print(json.dumps({"backup": store.backup_to(args.backup_db)}, indent=2))
+        return
+    if args.prune_now:
+        print(json.dumps({"retention": store.prune_old_data(config.storage.retention_days)}, indent=2))
+        return
+    if args.job_identity:
+        if args.review_status:
+            result = store.set_review_status(args.job_identity, args.review_status, args.review_notes)
+        else:
+            if args.review_notes:
+                parser.error("--review-notes requires --review-status")
+            result = store.get_review_status(args.job_identity)
+            if result is None:
+                raise SystemExit(f"No review status found for job identity: {args.job_identity}")
+        print(json.dumps(result, indent=2))
+        return
+    if args.review_status or args.review_notes:
+        parser.error("--review-status and --review-notes require --job-identity")
     summary = SearchOrchestrator(config).run(args.output_dir)
     print(json.dumps(summary, indent=2))
     if summary.get("run_status") == "partial_ai_failure":
