@@ -94,6 +94,7 @@ class AIResumeMatcher:
         self.model = os.getenv(model_env_name, default_model).strip() or default_model
         if self.provider == "openai_compatible" and not self.model:
             raise ValueError("AI_MODEL must be set for the openai_compatible provider")
+        self.last_usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         self.client = httpx.Client(
             timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)),
             headers={"User-Agent": "job-searcher/0.1"},
@@ -154,6 +155,37 @@ class AIResumeMatcher:
             time.sleep(min(delay + jitter, JobSource.MAX_RETRY_DELAY_SECONDS))
         raise RuntimeError("AI request retries exhausted")
 
+    def _capture_usage(self, data: object) -> None:
+        """Capture provider-reported token usage when the response supplies valid counts."""
+        if not isinstance(data, dict):
+            self.last_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            return
+        usage_key = "usageMetadata" if self.provider == "gemini" else "usage"
+        usage = data.get(usage_key, {})
+        if not isinstance(usage, dict):
+            usage = {}
+        input_key, output_key = (
+            ("promptTokenCount", "candidatesTokenCount")
+            if self.provider == "gemini"
+            else ("input_tokens", "output_tokens")
+            if self.provider == "claude"
+            else ("prompt_tokens", "completion_tokens")
+        )
+
+        def count(value: object) -> int:
+            return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+        input_tokens = count(usage.get(input_key))
+        output_tokens = count(usage.get(output_key))
+        total_tokens = count(usage.get("totalTokenCount" if self.provider == "gemini" else "total_tokens"))
+        if total_tokens == 0:
+            total_tokens = input_tokens + output_tokens
+        self.last_usage = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+
     def _request(self, prompt: str) -> str:
         if self.provider == "gemini":
             response = self._post_with_retries(
@@ -165,6 +197,7 @@ class AIResumeMatcher:
                 },
             )
             data = response.json()
+            self._capture_usage(data)
             return str(data["candidates"][0]["content"]["parts"][0]["text"])
         if self.provider == "claude":
             response = self._post_with_retries(
@@ -205,6 +238,7 @@ class AIResumeMatcher:
             },
         )
         data = response.json()
+        self._capture_usage(data)
         return str(data["choices"][0]["message"]["content"])
 
     def match_batch(self, jobs: list[Job]) -> dict[str, MatchResult]:
