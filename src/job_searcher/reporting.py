@@ -47,13 +47,50 @@ def write_reports(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> t
 
 
 def write_digest(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> Path:
-    """Write a compact employer-grouped digest for easy weekly review and sharing."""
+    """Write an employer-grouped digest aggregating recent scan snapshots from the last seven days."""
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
     digest_path = root / f"scan-{run_id}-digest.md"
-    lines = [f"# Job Discovery Digest — scan {run_id}", "", f"Matching postings: {len(rows)}", ""]
-    grouped: dict[str, list[dict[str, Any]]] = {}
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    combined: dict[str, dict[str, Any]] = {}
+
+    def row_key(row: dict[str, Any]) -> str:
+        return str(
+            row.get("identity")
+            or row.get("url")
+            or f"{row.get('company', '')}|{row.get('title', '')}|{row.get('location', '')}"
+        )
+
+    for snapshot in root.glob("scan-*.json"):
+        if snapshot.name == f"scan-{run_id}.json":
+            continue
+        try:
+            modified = datetime.fromtimestamp(snapshot.stat().st_mtime, timezone.utc)
+            if modified < cutoff:
+                continue
+            payload = json.loads(snapshot.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            LOG.warning("Skipping unreadable historical report %s (%s)", snapshot.name, type(exc).__name__)
+            continue
+        if not isinstance(payload, list):
+            continue
+        for item in payload:
+            if isinstance(item, dict):
+                combined[row_key(item)] = item
+
+    # The current scan wins over historical rows for the same job identity.
     for row in rows:
+        combined[row_key(row)] = row
+
+    digest_rows = list(combined.values())
+    lines = [
+        "# Job Discovery Digest — last seven days",
+        "",
+        f"Unique postings in recent scan snapshots: {len(digest_rows)}",
+        "",
+    ]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in digest_rows:
         company = str(row.get("company") or "Unknown employer")
         grouped.setdefault(company, []).append(row)
     if not grouped:
@@ -65,13 +102,11 @@ def write_digest(output_dir: str, run_id: int, rows: list[dict[str, Any]]) -> Pa
             url = str(row.get("url") or "")
             location = str(row.get("location") or "Unknown")
             score = int(row.get("score", 0))
-            reason = str(row.get("reason") or "No explanation supplied").replace("\\n", " ")
+            reason = str(row.get("reason") or "No explanation supplied").replace("\n", " ")
             lines.append(f"- [{title}]({url}) — {location} — **{score}/100** — {reason}")
         lines.append("")
-    digest_path.write_text("\\n".join(lines).rstrip() + "\\n", encoding="utf-8")
+    digest_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return digest_path
-
-
 
 def prune_old_reports(output_dir: str, retention_days: int) -> int:
     """Remove only old scan report files, preserving unrelated files in the output directory."""
