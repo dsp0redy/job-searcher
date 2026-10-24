@@ -26,7 +26,7 @@ jobs:
       CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-haiku-5-5' }}
       AI_PROVIDER: ${{ vars.AI_PROVIDER || 'gemini' }}
       AI_BASE_URL: ${{ vars.AI_BASE_URL || '' }}
-      AI_MODEL: ${{ vars.AI_MODEL || 'qwen2.5:3b' }}
+      AI_MODEL: ${{ vars.AI_MODEL || '' }}
       AI_API_KEY: ${{ secrets.AI_API_KEY }}
       RESUME_TEXT: ${{ secrets.RESUME_TEXT }}
     steps:
@@ -37,18 +37,6 @@ jobs:
           cache: pip
       - name: Install project
         run: pip install -e '.[dev]'
-      - name: Start local Ollama model (optional)
-        if: ${{ env.AI_PROVIDER == 'ollama' }}
-        run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          ollama serve > /tmp/ollama.log 2>&1 &
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null; then
-              break
-            fi
-            sleep 2
-          done
-          ollama pull "$AI_MODEL"
       - name: Validate configuration
         run: job-searcher --config config.yml --check-config
       - name: Run job search
