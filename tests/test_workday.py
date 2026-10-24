@@ -378,3 +378,26 @@ def test_fetch_logs_and_falls_back_on_http_detail_failure(monkeypatch: pytest.Mo
     assert jobs[0].location == "India"
     assert "details unavailable" in caplog.text
 
+
+
+
+def test_workday_adapter_matches_checked_in_search_and_detail_fixtures(monkeypatch):
+    import json
+    from pathlib import Path
+
+    fixtures = Path(__file__).parent / "fixtures"
+    listing = json.loads((fixtures / "workday_search.json").read_text(encoding="utf-8"))
+    detail = json.loads((fixtures / "workday_detail.json").read_text(encoding="utf-8"))
+    adapter = WorkdayAdapter(["https://example.wd1.myworkdayjobs.com/External"], max_pages=1)
+    def request_json(method, url, params=None, json_body=None):
+        return listing if method == "POST" else detail
+    monkeypatch.setattr(adapter, "request_json", request_json)
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert len(jobs) == 1
+    assert jobs[0].source_id == "WD-123"
+    assert jobs[0].location == "Hyderabad, Telangana | Secunderabad"
+    assert jobs[0].description == "Requires 3-5 years of Linux and C++ experience"
+    assert adapter.site_status["example/External"] == "ok: 1 postings"
