@@ -32,6 +32,7 @@ class SearchConfig(BaseModel):
 
 class StorageConfig(BaseModel):
     path: str = "data/jobs.sqlite3"
+    retention_days: int = Field(default=180, ge=1, le=3650)
 
 
 class MatchingConfig(BaseModel):
