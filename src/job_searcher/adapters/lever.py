@@ -11,11 +11,13 @@ class LeverAdapter(JobSource):
     def __init__(self, site_slugs: list[str], timeout: float = 20) -> None:
         super().__init__(timeout)
         self.site_slugs = site_slugs
+        self.site_status: dict[str, str] = {}
     def fetch(self) -> list[Job]:
         jobs: list[Job] = []
         for slug in self.site_slugs:
             if not slug.strip():
                 continue
+            before_count = len(jobs)
             try:
                 data = self.get_json(f"https://api.lever.co/v0/postings/{quote(slug, safe='')}", {"mode": "json"})
                 if not isinstance(data, list):
@@ -37,7 +39,9 @@ class LeverAdapter(JobSource):
                     jobs.append(Job(source=self.name, source_id=str(item["id"]), company=slug,
                         title=str(item["text"]), location=str(location), url=item["hostedUrl"],
                         description=description, posted_at=posted_at))
-            except Exception:
+                self.site_status[slug] = f"ok: {len(jobs) - before_count} postings"
+            except Exception as exc:
+                self.site_status[slug] = f"failed: {type(exc).__name__}"
                 import logging
                 logging.getLogger(__name__).exception("Lever site %s failed; continuing", slug)
         return jobs

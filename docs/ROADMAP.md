@@ -1,68 +1,64 @@
 # Roadmap
 
-This roadmap distinguishes shipped behavior from planned work. Priorities put safe, repeatable scheduled scans ahead of expanding matching features.
+This roadmap tracks implementation separately from validation that requires live credentials or external services. The current priority is reliable scheduled discovery with strict Bengaluru/Hyderabad filtering, safe notifications, and actionable operations.
 
 ## Phase 1 — Reliability and source resilience
 
-- [x] Typed normalized job schema and validation.
-- [x] Validated YAML configuration and environment-only secrets.
-- [x] SQLite persistence, deduplication, scan history, and AI match cache.
-- [x] Bounded request timeouts and retry handling for transient AI-provider failures.
-- [x] Bounded retries for Greenhouse/Lever HTTP requests, including numeric/date-form Retry-After handling and retryable HTTP status policy.
-- [ ] Apply the same explicit status/retry policy to Workday listing/detail requests and honor Retry-After in AI-provider requests.
-- [ ] Add per-host rate limiting and jitter to avoid synchronized retries across career sites.
+- [x] Typed normalized job schema and validated configuration.
+- [x] SQLite persistence, deduplication, scan history, AI match cache, review statuses, schema version tracking, and online backup.
+- [x] Bounded retries for source and AI HTTP requests, including retryable 429/5xx statuses, numeric/date-form Retry-After, exponential backoff, and jitter.
+- [x] Per-host request pacing shared by source adapters and AI requests within the process.
+- [x] Workday listing/detail requests use the same retry and pacing policy as Greenhouse/Lever.
 - [x] Isolate failed sources/sites so other configured sources can still contribute results.
-- [ ] Add response-schema fixtures and periodic checks for upstream API drift without making production scans depend on live endpoints.
+- [x] Add checked-in response-schema fixtures for Greenhouse, Lever, and Workday plus a scheduled non-blocking smoke check of configured public endpoints.
+- [x] Add fuzz/property tests for identity normalization, matching boundaries, Workday date parsing, and reviewed location regression cases.
 
 ## Phase 2 — Scheduled workflow and operations
 
-- [x] GitHub Actions scheduled weekday scan and manual dispatch.
-- [x] Serialize scheduled scans to reduce duplicate notifications.
-- [x] Restrict workflow permissions to repository contents read and Issues write only.
-- [x] Upload JSON/CSV/Markdown reports as retained workflow artifacts, including after scan failure.
+- [x] GitHub Actions scheduled weekday scan and manual dispatch, with serialized runs, finite timeout, least-privilege permissions, and report upload after failure.
 - [x] CI linting, strict type checking, deterministic tests, property-based fuzzing, and a 100% statement/branch coverage gate.
-- [x] CodeQL validation completed on the previous hardening PR.
-- [ ] Add dependency vulnerability auditing and a documented dependency update cadence.
-- [ ] Add structured scan-health reporting: source success/failure counts, elapsed time, candidate counts, notification failures, and AI failure/defer counts.
-- [ ] Alert on consecutive scans with no successful sources or repeated provider/notification failures.
-- [ ] Run a controlled live workflow with configured secrets and review the report artifact; mocked tests do not validate current upstream endpoints or account permissions.
-- [ ] Document recovery steps for failed runs, rate limits, invalid secrets, and unavailable providers.
+- [x] Scheduled dependency vulnerability auditing and weekly Dependabot updates for Python packages and GitHub Actions.
+- [x] Structured scan-health reporting: elapsed time, source success/failure/skipped counts, candidate counts, location/freshness/experience exclusions, AI failures/deferred jobs, notification outcomes, and configured token-cost estimates.
+- [x] Open/update a single scan-health alert when a scan fails; close it after a successful run.
+- [x] Document recovery steps for failed runs, rate limits, invalid secrets, provider outages, and issue permissions.
+- [x] Add a manual live-source dry-run that uses current public endpoints, writes reports/artifacts, and disables both AI calls and job Issue creation by default.
+- [ ] Verify the real scheduled workflow's secret configuration and `issues: write` permission in a controlled non-dry-run after reviewing the dry-run artifact; this can create real GitHub Issues and may incur AI-provider cost, so it requires explicit operator approval.
 
 ## Phase 3 — Matching quality and explainability
 
-- [x] Deterministic title/location/skill scoring before optional AI matching.
-- [x] Optional Gemini, Claude, and OpenAI-compatible provider support with response validation.
-- [x] AI result cache keyed by job content, resume, provider, endpoint, and model.
-- [x] Per-scan AI job cap and configurable batch size to limit cost.
-- [x] Reports include match evidence and AI status; AI initialization failure falls back to local scoring and preserves reports.
-- [ ] Extract mandatory requirements and years-of-experience constraints into structured evidence.
-- [ ] Parse resume text from PDF/text with quality checks and an explicit preview/override path before sending it to an AI provider.
-- [ ] Track provider-reported token usage and estimated cost where reliable usage metadata is available.
-- [ ] Add configurable freshness policy and explain why a posting was retained or excluded.
-- [ ] Add reviewed regression fixtures to evaluate ranking quality and false positives/negatives.
+- [x] Deterministic title/skill scoring with a hard location allowlist before AI matching or issue creation.
+- [x] Configured target cities are Bengaluru/Bangalore and Hyderabad; country-only, remote-only, and unrelated-city postings do not pass the city filter.
+- [x] Extract explicit experience ranges and exclude postings whose stated range is incompatible with the configured experience range. Unknown requirements are retained and reported as unknown rather than guessed.
+- [x] Reports include local evidence, freshness status, experience evidence, AI status, and exclusion counts in the run summary.
+- [x] Optional Gemini, Claude, and OpenAI-compatible provider support with response validation and cached results.
+- [x] Preview extracted resume text locally before an AI run; warn when extracted text is unusually short and reject empty extraction.
+- [x] Capture provider-reported token counts; estimated cost is shown only when explicit per-million input/output rates are configured.
+- [x] Configurable posting-age filter; old postings are counted as excluded and undated postings are labeled rather than silently assumed fresh.
+- [x] Reviewed location regression fixtures prevent out-of-area postings from re-entering the candidate/notification path.
+- [x] Add a manually reviewed relevance fixture with precision/recall checks for target-city roles, unrelated cities, wrong roles, and incompatible experience requirements.
 
 ## Phase 4 — Source coverage and user experience
 
-- [x] Workday, Greenhouse, and Lever public-interface adapters.
-- [x] Configurable role, location, skill, recency, and source settings.
-- [ ] Add more adapters only when stable, permitted public interfaces exist.
-- [ ] Add a compact weekly digest grouped by employer and match evidence, linking to original postings.
-- [ ] Add an optional review queue/status for saved, applied, rejected, and stale jobs without automatically applying.
-- [ ] Add retention controls for old job descriptions, scan history, and local report artifacts.
-- [ ] Add documented export/backup and database migration strategy.
+- [x] Workday, Greenhouse, and Lever public-interface adapters. These cover configured public interfaces, not every job board.
+- [x] Generate an employer-grouped digest for each scan with original links, scores, and evidence.
+- [x] Aggregate a seven-day employer-grouped digest across recent scan snapshots, deduplicated by stable job identity.
+- [x] Local review queue supports saved, applied, rejected, and stale statuses with private local notes; no automatic applications are made.
+- [x] Retention controls prune old database jobs, match-cache entries, scan history, and local scan report files.
+- [x] SQLite online backup and schema-version guard are available; existing schemas are upgraded additively during initialization.
+- [x] Evaluate further adapters; defer adding another source until a stable, permitted public interface is selected. Avoid unsupported scraping and untested integrations.
 
-## Acceptance criteria for future changes
+## Acceptance criteria
 
 - Every new branch/path has deterministic tests; external services are mocked in CI.
 - CI must pass Ruff, strict mypy, all tests, and 100% statement plus branch coverage.
-- Property-based tests should cover parsers, identity normalization, configuration boundaries, and scoring inputs where appropriate.
-- Workflow changes must preserve least-privilege permissions, serialized runs, finite job timeout, and artifact upload even after scan failure.
+- Property-based tests cover parsers, identity normalization, configuration boundaries, and scoring inputs where appropriate.
+- Workflow changes preserve least-privilege permissions, serialized runs, finite job timeout, and artifact upload even after scan failure.
 - No secrets, resume text, local database, or personal reports are committed.
-- Live validation is separate and controlled; unit tests must not create real GitHub Issues or spend AI tokens.
+- Live validation remains a separate controlled step; unit tests must not create real GitHub Issues or spend AI tokens.
 
 ## Explicit non-goals
 
 - No promise to search every job platform; integrations depend on supported public interfaces.
 - No bypassing authentication, CAPTCHAs, paywalls, or anti-bot protections.
 - No automatic job applications or fabricated resume claims.
-- AI scores are advisory; review the original posting and evidence before applying.
+- AI scores are advisory; review the original posting and requirements before applying.

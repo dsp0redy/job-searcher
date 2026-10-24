@@ -42,7 +42,7 @@ class FakeSource:
 def make_config(tmp_path, provider="none", notifications=False, **matching_overrides):
     matching = MatchingConfig(provider=provider, **matching_overrides)
     return AppConfig(
-        profile=ProfileConfig(titles=["Engineer"], locations=["Bengaluru"], skills=["C++", "Linux"]),
+        profile=ProfileConfig(titles=["Engineer"], locations=["Bengaluru", "Bangalore", "Hyderabad"], minimum_experience_years=2, maximum_experience_years=5, skills=["C++", "Linux"]),
         search=SearchConfig(minimum_local_score=0, posted_within_days=14),
         storage=StorageConfig(path=str(tmp_path / "state.sqlite3")),
         matching=matching,
@@ -83,7 +83,7 @@ def test_end_to_end_local_scan_persists_and_writes_three_reports(tmp_path, monke
     assert summary["postings_fetched"] == 1
     assert summary["new_identities"] == 1
     assert summary["qualified_candidates"] == 1
-    assert len(summary["reports"]) == 3
+    assert len(summary["reports"]) == 4
     assert all(__import__("pathlib").Path(path).exists() for path in summary["reports"])
     assert all(source.closed for source in created.values())
     with orchestrator.store._connect() as db:
@@ -291,6 +291,8 @@ def test_notification_results_are_reported(tmp_path, monkeypatch, publish_status
     summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
     assert summary["notifications"][publish_status if publish_status != "already_exists" else "already_exists"] >= 0
     assert summary["notifications"]["results"][0]["status"] == publish_status
+    if publish_status == "failed":
+        assert summary["run_status"] == "partial_notification_failure"
     assert publisher_instances[0].closed is True
 
 
@@ -353,3 +355,146 @@ def test_cached_result_with_wrong_job_id_is_recomputed(tmp_path, monkeypatch):
     assert matcher.calls == 1
     assert summary["ai"]["scored"] == 1
 
+
+
+
+def test_out_of_area_job_never_becomes_candidate_or_github_issue(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"location": "Pune, Maharashtra, India"})
+    install_sources(monkeypatch, [job])
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    calls = []
+
+    class Publisher:
+        def __init__(self, repository, token, timeout):
+            pass
+        def publish(self, *args, **kwargs):
+            calls.append(args[0].location)
+            return {"status": "created", "issue_url": "https://example.com/issue"}
+        def close(self):
+            pass
+
+    monkeypatch.setattr(orchestrator_module, "GitHubIssuePublisher", Publisher)
+    config = make_config(tmp_path, notifications=True)
+    config.matching.threshold = 0
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+
+    assert summary["postings_fetched"] == 1
+    assert summary["excluded_by_location"] == 1
+    assert summary["qualified_candidates"] == 0
+    assert summary["notifications"]["created"] == 0
+    assert calls == []
+
+
+@pytest.mark.parametrize("location", ["Bangalore, India", "Hyderabad, Telangana, India"])
+def test_bengaluru_and_hyderabad_jobs_remain_eligible(tmp_path, monkeypatch, location):
+    job = make_job().model_copy(update={"location": location})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_location"] == 0
+    assert summary["qualified_candidates"] == 1
+
+
+
+def test_explicitly_senior_experience_requirement_is_excluded(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"description": "Requires 8+ years of experience in C++."})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_experience"] == 1
+    assert summary["qualified_candidates"] == 0
+
+
+def test_unknown_experience_requirement_is_kept_with_transparent_evidence(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"description": "C++ Linux systems development"})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_experience"] == 0
+    import json
+    from pathlib import Path
+    rows = json.loads(Path(summary["reports"][0]).read_text(encoding="utf-8"))
+    assert rows[0]["experience_requirement"] == {"minimum_years": None, "maximum_years": None}
+    assert rows[0]["freshness_status"] == "within_configured_window"
+
+
+
+def test_ai_usage_and_cost_are_reported_only_when_rates_are_configured(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [make_job()])
+
+    class Matcher:
+        last_usage = {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+        def __init__(self, provider, timeout): pass
+        def cache_key(self, job): return "unused-" + job.identity
+        def match_batch(self, batch):
+            return {job.identity: MatchResult(job_id=job.identity, score=80, reason="evidence") for job in batch}
+        def close(self): pass
+
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", Matcher)
+    config = make_config(tmp_path, provider="gemini")
+    config.matching.input_cost_usd_per_million_tokens = 2.0
+    config.matching.output_cost_usd_per_million_tokens = 4.0
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["ai"]["token_usage"] == {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+    assert summary["ai"]["estimated_cost_usd"] == 0.0004
+    assert summary["ai"]["cost_estimate_configured"] is True
+
+
+
+def test_all_failed_greenhouse_sites_do_not_count_as_success(tmp_path, monkeypatch):
+    class FailedGreenhouse:
+        name = "greenhouse"
+        board_tokens = ["broken"]
+        site_status = {}
+        def __init__(self, *args, **kwargs): pass
+        def fetch(self):
+            self.site_status = {"broken": "failed: ValueError"}
+            return []
+        def close(self): pass
+
+    class EmptyWorkday(FakeSource):
+        def __init__(self, *args, **kwargs):
+            super().__init__("workday", [])
+            self.site_status = {}
+
+    class EmptyLever(FakeSource):
+        def __init__(self, *args, **kwargs):
+            super().__init__("lever", [])
+            self.site_slugs = []
+
+    monkeypatch.setattr(orchestrator_module, "GreenhouseAdapter", FailedGreenhouse)
+    monkeypatch.setattr(orchestrator_module, "LeverAdapter", EmptyLever)
+    monkeypatch.setattr(orchestrator_module, "WorkdayAdapter", EmptyWorkday)
+    config = make_config(tmp_path)
+    config.sources.lever = []
+    config.sources.workday = []
+    summary = SearchOrchestrator(config).run(str(tmp_path / "reports"))
+    assert summary["sources"]["greenhouse"] == "failed: 0/1 sites responded"
+    assert summary["sources"]["greenhouse:broken"] == "failed: ValueError"
+    assert summary["source_health"]["successful"] == 0
+    assert summary["run_status"] == "no_sources_succeeded"
+
+
+
+def test_explicit_experience_fields_skip_text_extraction(tmp_path, monkeypatch):
+    job = make_job().model_copy(update={"experience_min": 3.0, "experience_max": 5.0})
+    install_sources(monkeypatch, [job])
+    summary = SearchOrchestrator(make_config(tmp_path)).run(str(tmp_path / "reports"))
+    assert summary["excluded_by_experience"] == 0
+    import json
+    from pathlib import Path
+    rows = json.loads(Path(summary["reports"][0]).read_text(encoding="utf-8"))
+    assert rows[0]["experience_requirement"] == {"minimum_years": 3.0, "maximum_years": 5.0}
+
+
+def test_invalid_ai_token_usage_values_are_ignored(tmp_path, monkeypatch):
+    install_sources(monkeypatch, [make_job()])
+
+    class Matcher:
+        last_usage = {"input_tokens": "bad", "output_tokens": -1, "total_tokens": True}
+        def __init__(self, provider, timeout): pass
+        def cache_key(self, job): return "invalid-usage-" + job.identity
+        def match_batch(self, batch):
+            return {job.identity: MatchResult(job_id=job.identity, score=80, reason="evidence") for job in batch}
+        def close(self): pass
+
+    monkeypatch.setattr(orchestrator_module, "AIResumeMatcher", Matcher)
+    summary = SearchOrchestrator(make_config(tmp_path, provider="gemini")).run(str(tmp_path / "reports"))
+    assert summary["ai"]["token_usage"] == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}

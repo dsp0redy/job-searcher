@@ -1,0 +1,14 @@
+{
+  "jobPostingInfo": {
+    "jobReqId": "WD-123",
+    "jobDescription": "Requires 3-5 years of Linux and C++ experience",
+    "postedOn": "Posted 2 Days Ago",
+    "timeType": "Full time",
+    "location": "Hyderabad, Telangana",
+    "additionalLocations": [
+      {
+        "location": "Secunderabad"
+      }
+    ]
+  }
+}

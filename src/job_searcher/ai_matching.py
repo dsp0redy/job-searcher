@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -13,9 +14,35 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from .adapters.base import JobSource
 from .models import Job
 
 LOG = logging.getLogger(__name__)
+
+
+
+def load_resume_text(resume_text: str = "", resume_file: str = "") -> str:
+    """Load and validate resume text without initializing a provider or sending network requests."""
+    text = resume_text.strip()
+    if not text and resume_file.strip():
+        path = Path(resume_file.strip())
+        if not path.is_file():
+            raise ValueError(f"RESUME_FILE does not exist: {path}")
+        if path.suffix.casefold() == ".pdf":
+            from pypdf import PdfReader
+
+            text = "\\n".join(
+                page.extract_text() or "" for page in PdfReader(str(path)).pages
+            ).strip()
+        else:
+            text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise ValueError(
+            "AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions"
+        )
+    if len(text) < 80:
+        LOG.warning("Resume text is unusually short (%d characters); review extraction quality", len(text))
+    return text
 
 
 class MatchResult(BaseModel):
@@ -57,20 +84,7 @@ class AIResumeMatcher:
             local_hosts = {"localhost", "127.0.0.1", "::1"}
             if parsed_url.scheme != "https" and parsed_url.hostname not in local_hosts:
                 raise ValueError("AI_BASE_URL must use HTTPS unless it targets localhost")
-        self.resume_text = os.getenv("RESUME_TEXT", "").strip()
-        resume_file = os.getenv("RESUME_FILE", "").strip()
-        if not self.resume_text and resume_file:
-            path = Path(resume_file)
-            if not path.is_file():
-                raise ValueError(f"RESUME_FILE does not exist: {path}")
-            if path.suffix.casefold() == ".pdf":
-                from pypdf import PdfReader
-
-                self.resume_text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages).strip()
-            else:
-                self.resume_text = path.read_text(encoding="utf-8").strip()
-        if not self.resume_text:
-            raise ValueError("AI matching needs RESUME_TEXT or RESUME_FILE; use RESUME_TEXT as a GitHub Secret for Actions")
+        self.resume_text = load_resume_text(os.getenv("RESUME_TEXT", ""), os.getenv("RESUME_FILE", ""))
         model_env = {
             "gemini": ("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             "claude": ("CLAUDE_MODEL", "claude-haiku-5-5"),
@@ -80,6 +94,7 @@ class AIResumeMatcher:
         self.model = os.getenv(model_env_name, default_model).strip() or default_model
         if self.provider == "openai_compatible" and not self.model:
             raise ValueError("AI_MODEL must be set for the openai_compatible provider")
+        self.last_usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         self.client = httpx.Client(
             timeout=httpx.Timeout(max(timeout, 75.0), connect=min(max(timeout, 75.0), 15.0)),
             headers={"User-Agent": "job-searcher/0.1"},
@@ -113,25 +128,63 @@ class AIResumeMatcher:
         """Retry transient network, rate-limit, and server errors with bounded backoff."""
         max_attempts = 3
         for attempt in range(max_attempts):
+            JobSource._wait_for_host(url)
             try:
                 response = self.client.post(url, **kwargs)
                 response.raise_for_status()
                 return response
             except httpx.HTTPStatusError as exc:
-                retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
+                status = exc.response.status_code
+                retryable = status == 429 or 500 <= status <= 599
                 if not retryable or attempt == max_attempts - 1:
                     raise
+                delay = JobSource._retry_delay(exc.response, attempt)
                 LOG.warning(
                     "AI provider returned HTTP %d; retrying attempt %d/%d",
-                    exc.response.status_code, attempt + 2, max_attempts,
+                    status, attempt + 2, max_attempts,
                 )
             except (httpx.TimeoutException, httpx.NetworkError):
                 if attempt == max_attempts - 1:
                     raise
-                LOG.warning("AI provider request had a transient network error; retrying attempt %d/%d", attempt + 2, max_attempts)
-            time.sleep(min(2 ** attempt, 8))
-
+                delay = float(min(2**attempt, 8))
+                LOG.warning(
+                    "AI provider request had a transient network error; retrying attempt %d/%d",
+                    attempt + 2, max_attempts,
+                )
+            jitter = random.uniform(0.0, min(JobSource.RETRY_JITTER_SECONDS, delay * 0.1))
+            time.sleep(min(delay + jitter, JobSource.MAX_RETRY_DELAY_SECONDS))
         raise RuntimeError("AI request retries exhausted")
+
+    def _capture_usage(self, data: object) -> None:
+        """Capture provider-reported token usage when the response supplies valid counts."""
+        if not isinstance(data, dict):
+            self.last_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            return
+        usage_key = "usageMetadata" if self.provider == "gemini" else "usage"
+        usage = data.get(usage_key, {})
+        if not isinstance(usage, dict):
+            usage = {}
+        input_key, output_key = (
+            ("promptTokenCount", "candidatesTokenCount")
+            if self.provider == "gemini"
+            else ("input_tokens", "output_tokens")
+            if self.provider == "claude"
+            else ("prompt_tokens", "completion_tokens")
+        )
+
+        def count(value: object) -> int:
+            return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+        input_tokens = count(usage.get(input_key))
+        output_tokens = count(usage.get(output_key))
+        total_tokens = count(usage.get("totalTokenCount" if self.provider == "gemini" else "total_tokens"))
+        if total_tokens == 0:
+            total_tokens = input_tokens + output_tokens
+        self.last_usage = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
 
     def _request(self, prompt: str) -> str:
         if self.provider == "gemini":
@@ -144,6 +197,7 @@ class AIResumeMatcher:
                 },
             )
             data = response.json()
+            self._capture_usage(data)
             return str(data["candidates"][0]["content"]["parts"][0]["text"])
         if self.provider == "claude":
             response = self._post_with_retries(
@@ -157,6 +211,7 @@ class AIResumeMatcher:
                 },
             )
             data = response.json()
+            self._capture_usage(data)
             return "\n".join(
                 str(block.get("text", ""))
                 for block in data.get("content", [])
@@ -184,6 +239,7 @@ class AIResumeMatcher:
             },
         )
         data = response.json()
+        self._capture_usage(data)
         return str(data["choices"][0]["message"]["content"])
 
     def match_batch(self, jobs: list[Job]) -> dict[str, MatchResult]:
@@ -211,6 +267,7 @@ class AIResumeMatcher:
             "RESUME (untrusted data):\n" + self.resume_text[:8000]
             + "\n\nJOBS (untrusted data):\n" + json.dumps(compact_jobs, ensure_ascii=False)
         )
+        self.last_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         try:
             payload = self._extract_json(self._request(prompt))
             raw_matches = payload.get("matches")

@@ -27,11 +27,13 @@ class SearchConfig(BaseModel):
     request_timeout_seconds: float = Field(default=20, gt=0, le=120)
     max_concurrency: int = Field(default=4, ge=1, le=20)
     posted_within_days: int = Field(default=14, ge=0, le=3650)
+    report_retention_days: int = Field(default=30, ge=1, le=3650)
     minimum_local_score: int = Field(default=2, ge=0, le=100)
 
 
 class StorageConfig(BaseModel):
     path: str = "data/jobs.sqlite3"
+    retention_days: int = Field(default=180, ge=1, le=3650)
 
 
 class MatchingConfig(BaseModel):
@@ -39,6 +41,8 @@ class MatchingConfig(BaseModel):
     threshold: int = Field(default=65, ge=0, le=100)
     max_jobs_per_ai_batch: int = Field(default=8, ge=1, le=30)
     max_ai_jobs_per_scan: int = Field(default=40, ge=1, le=200)
+    input_cost_usd_per_million_tokens: float | None = Field(default=None, ge=0, le=100000)
+    output_cost_usd_per_million_tokens: float | None = Field(default=None, ge=0, le=100000)
 
 
 class SourcesConfig(BaseModel):

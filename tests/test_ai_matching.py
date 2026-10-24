@@ -464,3 +464,36 @@ def test_retry_loop_has_defensive_empty_range_guard(monkeypatch):
     finally:
         matcher.close()
 
+
+
+
+@pytest.mark.parametrize(
+    ("provider", "payload", "expected"),
+    [
+        ("gemini", {"usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 30, "totalTokenCount": 150}},
+         {"input_tokens": 120, "output_tokens": 30, "total_tokens": 150}),
+        ("claude", {"usage": {"input_tokens": 90, "output_tokens": 20}},
+         {"input_tokens": 90, "output_tokens": 20, "total_tokens": 110}),
+        ("openai_compatible", {"usage": {"prompt_tokens": 70, "completion_tokens": 10, "total_tokens": 80}},
+         {"input_tokens": 70, "output_tokens": 10, "total_tokens": 80}),
+    ],
+)
+def test_capture_provider_usage(provider, payload, expected, monkeypatch):
+    configure_ai(monkeypatch)
+    matcher = AIResumeMatcher(provider)
+    try:
+        matcher._capture_usage(payload)
+        assert matcher.last_usage == expected
+    finally:
+        matcher.close()
+
+
+@pytest.mark.parametrize("payload", [None, [], {"usage": "invalid"}, {"usage": {"input_tokens": -1, "output_tokens": True}}])
+def test_capture_usage_handles_missing_or_invalid_metadata(payload, monkeypatch):
+    configure_ai(monkeypatch)
+    matcher = AIResumeMatcher("claude")
+    try:
+        matcher._capture_usage(payload)
+        assert matcher.last_usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    finally:
+        matcher.close()

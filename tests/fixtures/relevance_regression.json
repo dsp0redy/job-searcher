@@ -1,0 +1,44 @@
+[
+  {
+    "id": "relevant-bengaluru",
+    "title": "C++ Engineer",
+    "location": "Bengaluru, Karnataka, India",
+    "description": "C++ Linux systems development",
+    "expected_relevant": true
+  },
+  {
+    "id": "relevant-hyderabad",
+    "title": "Firmware Engineer",
+    "location": "Hyderabad, Telangana, India",
+    "description": "Embedded C++ firmware and Linux",
+    "expected_relevant": true
+  },
+  {
+    "id": "relevant-bangalore",
+    "title": "Linux Systems Engineer",
+    "location": "Bangalore, India",
+    "description": "Linux, gRPC and C++ systems",
+    "expected_relevant": true
+  },
+  {
+    "id": "wrong-city",
+    "title": "C++ Engineer",
+    "location": "Pune, Maharashtra, India",
+    "description": "C++ Linux systems development",
+    "expected_relevant": false
+  },
+  {
+    "id": "wrong-role",
+    "title": "Marketing Manager",
+    "location": "Bengaluru, India",
+    "description": "Campaign planning and operations",
+    "expected_relevant": false
+  },
+  {
+    "id": "too-senior",
+    "title": "Senior C++ Engineer",
+    "location": "Hyderabad, India",
+    "description": "Requires 8+ years of experience in C++ and Linux",
+    "expected_relevant": false
+  }
+]

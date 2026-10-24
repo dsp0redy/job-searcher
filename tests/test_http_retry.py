@@ -73,7 +73,7 @@ def test_get_json_retries_rate_limit_then_succeeds(monkeypatch):
     try:
         assert source.get_json("https://example.com/jobs") == {"ok": True}
         assert calls == 2
-        assert delays == [0.0]
+        assert 0.0 in delays  # Retry-After: 0 adds no retry backoff; host pacing may also wait.
     finally:
         source.close()
 
@@ -161,5 +161,68 @@ def test_get_json_defensive_guard_when_attempt_count_is_zero():
     try:
         with pytest.raises(RuntimeError, match="retries exhausted"):
             source.get_json("https://example.com/jobs")
+    finally:
+        source.close()
+
+
+
+def test_host_pacing_ignores_urls_without_hosts(monkeypatch):
+    from job_searcher.adapters import base as base_module
+
+    monkeypatch.setattr(base_module, "_HOST_NEXT_REQUEST", {})
+    monkeypatch.setattr(base_module.time, "sleep", lambda _: None)
+    JobSource._wait_for_host("/relative/path")
+    assert base_module._HOST_NEXT_REQUEST == {}
+
+
+def test_host_pacing_records_host_and_waits_on_following_request(monkeypatch):
+    from job_searcher.adapters import base as base_module
+
+    now_values = iter([100.0, 100.1])
+    waits = []
+    monkeypatch.setattr(base_module, "_HOST_NEXT_REQUEST", {})
+    monkeypatch.setattr(base_module.time, "monotonic", lambda: next(now_values))
+    monkeypatch.setattr(base_module.time, "sleep", waits.append)
+    JobSource._wait_for_host("https://example.test/jobs")
+    JobSource._wait_for_host("https://example.test/other")
+    assert len(waits) == 1
+    assert waits[0] > 0
+    assert "example.test" in base_module._HOST_NEXT_REQUEST
+
+
+
+def test_request_json_passes_optional_get_and_post_arguments(monkeypatch):
+    source = ConcreteSource()
+    calls = []
+    def get(url, **kwargs):
+        calls.append(("GET", url, kwargs))
+        return httpx.Response(200, json={"method": "get"}, request=httpx.Request("GET", url))
+    def post(url, **kwargs):
+        calls.append(("POST", url, kwargs))
+        return httpx.Response(200, json={"method": "post"}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(source.client, "get", get)
+    monkeypatch.setattr(source.client, "post", post)
+    monkeypatch.setattr(source, "_wait_for_host", lambda _: None)
+    try:
+        assert source.request_json("GET", "https://example.test/get", params={"q": "c++"}) == {"method": "get"}
+        assert source.request_json("POST", "https://example.test/post", params={"page": "1"},
+                                   json_body={"searchText": "linux"}) == {"method": "post"}
+        assert calls[0][2]["params"] == {"q": "c++"}
+        assert calls[1][2] == {"params": {"page": "1"}, "json": {"searchText": "linux"}}
+    finally:
+        source.close()
+
+
+def test_request_json_post_omits_empty_optional_arguments(monkeypatch):
+    source = ConcreteSource()
+    calls = []
+    def post(url, **kwargs):
+        calls.append(kwargs)
+        return httpx.Response(200, json={}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(source.client, "post", post)
+    monkeypatch.setattr(source, "_wait_for_host", lambda _: None)
+    try:
+        assert source.request_json("POST", "https://example.test/post") == {}
+        assert calls == [{}]
     finally:
         source.close()

@@ -2,6 +2,12 @@ name: Scheduled job scan
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Safely scan live sources without AI calls or job Issue creation"
+        type: boolean
+        required: true
+        default: true
   schedule:
     - cron: "17 2 * * 1-5"
 
@@ -48,8 +54,27 @@ jobs:
         run: python -m pip install .
       - name: Validate configuration
         run: job-searcher --config config.yml --check-config
-      - name: Run job search
+      - name: Restore recent report snapshots for weekly digest
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: reports/
+          key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            job-search-reports-
+      - name: Run safe live-source dry run
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: job-searcher --config config.yml --output-dir reports --dry-run
+      - name: Run scheduled or explicitly enabled live scan
+        if: github.event_name != 'workflow_dispatch' || !inputs.dry_run
         run: job-searcher --config config.yml --output-dir reports
+      - name: Save recent report snapshots
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: reports/
+          key: job-search-reports-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload reports (including on failure)
         if: always()
         uses: actions/upload-artifact@v4
@@ -58,3 +83,53 @@ jobs:
           path: reports/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Open or update scan-health alert
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- job-searcher-scan-health-alert -->';
+            const title = '[Job Searcher] Scheduled scan needs attention';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100
+            });
+            const existing = issues.find(issue => !issue.pull_request && (issue.body || '').includes(marker));
+            const body = [
+              marker,
+              'The scheduled job search failed, no source succeeded, AI matching was incomplete, or GitHub notification delivery failed.',
+              '',
+              '- Workflow run: ' + context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId,
+              '- Trigger: ' + context.eventName,
+              '- Branch: ' + context.ref,
+              '',
+              'Review the run logs and uploaded report artifacts. Confirm source URLs, rate limits, provider credentials, and GitHub permissions before rerunning.',
+              '',
+              'This alert is updated in place to avoid creating one issue per failed run.'
+            ].join('\n');
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
+      - name: Resolve scan-health alert after a successful scan
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- job-searcher-scan-health-alert -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100
+            });
+            const existing = issues.find(issue => !issue.pull_request && (issue.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: 'closed',
+                body: (existing.body || '') + '\n\nResolved by successful workflow run: ' +
+                  context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId
+              });
+            }

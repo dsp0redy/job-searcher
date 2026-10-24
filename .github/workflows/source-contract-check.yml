@@ -1,0 +1,33 @@
+name: Public source contract smoke check
+
+on:
+  pull_request:
+    paths:
+      - "config.yml"
+      - "src/job_searcher/adapters/**"
+      - "scripts/check_source_contracts.py"
+      - ".github/workflows/source-contract-check.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "43 6 * * 2"
+
+permissions:
+  contents: read
+
+jobs:
+  source-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+      - name: Check configured public source contracts
+        continue-on-error: true
+        run: python scripts/check_source_contracts.py

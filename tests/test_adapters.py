@@ -83,6 +83,8 @@ def test_greenhouse_bad_schema_does_not_abort_other_boards(monkeypatch):
         adapter.close()
     assert len(jobs) == 1
     assert jobs[0].company == "good"
+    assert adapter.site_status["bad"] == "failed: ValueError"
+    assert adapter.site_status["good"] == "ok: 1 postings"
 
 
 def test_greenhouse_network_error_isolated_per_board(monkeypatch):
@@ -94,6 +96,8 @@ def test_greenhouse_network_error_isolated_per_board(monkeypatch):
     monkeypatch.setattr(adapter, "get_json", response)
     try:
         assert len(adapter.fetch()) == 1
+        assert adapter.site_status["bad"] == "failed: ConnectError"
+        assert adapter.site_status["good"] == "ok: 1 postings"
     finally:
         adapter.close()
 
@@ -123,6 +127,7 @@ def test_lever_skips_blank_slugs_and_invalid_rows(monkeypatch):
     assert jobs[1].location == "India"
     assert jobs[1].posted_at is None
     assert jobs[2].posted_at is None
+    assert adapter.site_status["board"] == "ok: 3 postings"
 
 
 def test_lever_bad_schema_and_network_error_are_isolated(monkeypatch):
@@ -140,3 +145,36 @@ def test_lever_bad_schema_and_network_error_are_isolated(monkeypatch):
         adapter.close()
     assert len(jobs) == 1
     assert jobs[0].company == "good"
+
+
+
+def test_greenhouse_adapter_matches_checked_in_response_fixture(monkeypatch):
+    import json
+    from pathlib import Path
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "greenhouse_jobs.json").read_text(encoding="utf-8"))
+    adapter = GreenhouseAdapter(["fixture-board"])
+    monkeypatch.setattr(adapter, "get_json", lambda url, params: fixture)
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert len(jobs) == 1
+    assert jobs[0].title == "C++ Engineer"
+    assert jobs[0].location == "Bengaluru, India"
+
+
+def test_lever_adapter_matches_checked_in_response_fixture(monkeypatch):
+    import json
+    from pathlib import Path
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "lever_jobs.json").read_text(encoding="utf-8"))
+    adapter = LeverAdapter(["fixture-site"])
+    monkeypatch.setattr(adapter, "get_json", lambda url, params: fixture)
+    try:
+        jobs = adapter.fetch()
+    finally:
+        adapter.close()
+    assert len(jobs) == 1
+    assert jobs[0].title == "Embedded Software Engineer"
+    assert jobs[0].location == "Hyderabad, India"

@@ -1,0 +1,13 @@
+[
+  {
+    "id": "lever-123",
+    "text": "Embedded Software Engineer",
+    "hostedUrl": "https://jobs.example.com/lever-123",
+    "categories": {
+      "location": "Hyderabad, India"
+    },
+    "descriptionPlain": "C++ firmware",
+    "additionalPlain": "Linux systems",
+    "createdAt": 1790000000000
+  }
+]

@@ -3,8 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+from .ai_matching import load_resume_text
 from .config import AppConfig
 from .orchestrator import SearchOrchestrator
+from .storage import JobStore
+from .reporting import prune_old_reports
 
 
 def main() -> None:
@@ -13,18 +17,75 @@ def main() -> None:
     parser.add_argument("--output-dir", default="reports", help="Report output directory")
     parser.add_argument("--check-config", action="store_true", help="Validate config without network calls")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--preview-resume", action="store_true", help="Preview extracted resume text locally; no provider calls are made")
+    parser.add_argument("--backup-db", metavar="PATH", help="Create a consistent SQLite backup and exit")
+    parser.add_argument("--job-identity", help="Job identity from a JSON report; inspect or update its local review status")
+    parser.add_argument("--review-status", choices=["saved", "applied", "rejected", "stale"], help="Set review status for --job-identity")
+    parser.add_argument("--review-notes", default="", help="Optional private local review notes (max 2000 characters)")
+    parser.add_argument("--prune-now", action="store_true", help="Prune persisted data using configured retention and exit")
+    parser.add_argument("--dry-run", action="store_true", help="Fetch live sources and write reports without AI calls or GitHub Issue creation")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = AppConfig.load(args.config)
+    if args.dry_run:
+        config.matching.provider = "none"
+        config.notifications.github_issues = False
+        logging.info("Dry run enabled: AI matching and GitHub Issue creation are disabled")
+    if args.preview_resume:
+        try:
+            resume = load_resume_text(os.getenv("RESUME_TEXT", ""), os.getenv("RESUME_FILE", ""))
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        preview = {
+            "characters": len(resume),
+            "words": len(resume.split()),
+            "quality_warning": len(resume) < 80,
+            "preview": resume[:1200],
+            "truncated": len(resume) > 1200,
+            "network_requests_made": False,
+        }
+        print(json.dumps(preview, indent=2))
+        return
     if args.check_config:
         print("Configuration valid")
         print(json.dumps(config.model_dump(), indent=2))
         return
+    if args.backup_db:
+        store = JobStore(config.storage.path)
+        print(json.dumps({"backup": store.backup_to(args.backup_db)}, indent=2))
+        return
+    if args.prune_now:
+        store = JobStore(config.storage.path)
+        retention = store.prune_old_data(config.storage.retention_days)
+        retention["reports"] = prune_old_reports(args.output_dir, config.search.report_retention_days)
+        print(json.dumps({"retention": retention}, indent=2))
+        return
+    if args.job_identity:
+        store = JobStore(config.storage.path)
+        if args.review_status:
+            updated_review = store.set_review_status(
+                args.job_identity, args.review_status, args.review_notes
+            )
+            print(json.dumps(updated_review, indent=2))
+            return
+        if args.review_notes:
+            parser.error("--review-notes requires --review-status")
+        existing_review = store.get_review_status(args.job_identity)
+        if existing_review is None:
+            raise SystemExit(f"No review status found for job identity: {args.job_identity}")
+        print(json.dumps(existing_review, indent=2))
+        return
+    if args.review_status or args.review_notes:
+        parser.error("--review-status and --review-notes require --job-identity")
     summary = SearchOrchestrator(config).run(args.output_dir)
     print(json.dumps(summary, indent=2))
     if summary.get("run_status") == "partial_ai_failure":
         raise SystemExit("AI matching was incomplete after retries; reports were generated, but the scan needs attention.")
+    if summary.get("run_status") == "no_sources_succeeded":
+        raise SystemExit("No configured job sources returned successfully; inspect source health and credentials.")
+    if summary.get("run_status") == "partial_notification_failure":
+        raise SystemExit("One or more GitHub notifications failed; reports were generated, but notification delivery needs attention.")
 
 if __name__ == "__main__":
     main()
