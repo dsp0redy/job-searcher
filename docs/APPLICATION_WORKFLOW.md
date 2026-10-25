@@ -9,6 +9,7 @@ Job Searcher already discovers, filters, ranks, deduplicates, and reports job po
 - Drafts a tailored resume and cover letter without inventing qualifications.
 - Prepares role-specific interview notes and a pre-submission checklist.
 - Keeps the output as local review files for the user to edit.
+- Consumes the scanner's `reports/application-queue.json` handoff, which contains only jobs at or above the configured match threshold (70/100 by default).
 
 It does **not** submit application forms, email recruiters, log in to job portals, or automatically mark jobs as applied.
 
@@ -18,9 +19,15 @@ It does **not** submit application forms, email recruiters, log in to job portal
 2. Copy `docs/candidate-profile.example.md` to `.claude/candidate-profile.md`.
 3. Replace every placeholder with verified details from your actual resume. Remove any section that does not apply.
 4. Keep the private profile and generated application packages out of Git. The repository's `.gitignore` excludes `.claude/candidate-profile.md` and `applications/`.
-5. From Claude Code, run `/prepare-application https://employer.example/jobs/123` (replace this with the real posting URL).
+5. Run the scanner first; it writes `reports/application-queue.json` with eligible jobs scoring at least the configured threshold (70/100 by default). Review that shortlist, then from Claude Code run `/prepare-application` and ask it to process `reports/application-queue.json`, or pass a specific posting URL.
 
 If the job site blocks automated page access, paste the full job description when prompted. Do not provide passwords, cookies, or other login secrets.
+
+## Handoff and score semantics
+
+The queue JSON is included in the existing `reports/` artifact from GitHub Actions. Download that artifact and place `application-queue.json` in the local Job Searcher checkout before running the assistant. The public upstream `ai-job-search-dev/ai-job-search` repository is not writable by this project; this handoff is a file contract rather than a direct repository-to-repository push.
+
+A score of 70/100 is a relevance threshold, **not an actual employer ATS score or probability of interview**. If AI matching is enabled but failed or deferred for a posting, that posting is excluded from the handoff. Local-only matches are labeled `local_heuristic`.
 
 ## Output
 
