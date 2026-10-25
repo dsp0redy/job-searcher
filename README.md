@@ -94,3 +94,15 @@ Workday detail requests are capped per career site to reduce load; postings beyo
 - Review each job description and employer requirements manually. A high keyword score does not guarantee suitability.
 
 Local review tracking is available through `--job-identity ID --review-status saved|applied|rejected|stale`; `--backup-db PATH` creates a consistent SQLite backup, and `--prune-now` applies configured retention. See [Setup and operations](docs/SETUP.md) and [Roadmap](docs/ROADMAP.md).
+
+
+## Optional application preparation (Claude Code)
+
+The scheduled scanner discovers and ranks jobs; this optional local workflow helps you prepare materials for a selected posting. It is separate from GitHub Actions and does not automatically submit applications.
+
+1. Install and configure [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview).
+2. Copy `docs/candidate-profile.example.md` to `.claude/candidate-profile.md` and replace placeholders with verified information.
+3. Run `/prepare-application https://employer.example/jobs/123` inside Claude Code.
+4. Review the generated job notes, tailored resume draft, cover letter, interview notes, and checklist under `applications/`. Confirm every statement before using the files.
+
+The candidate profile and generated application packages are ignored by Git to reduce the risk of committing personal information. Do not put real resume details in GitHub Issues, PRs, or workflow logs. The workflow drafts documents only; you must personally review and submit the application. See [Application preparation workflow](docs/APPLICATION_WORKFLOW.md) for details.
