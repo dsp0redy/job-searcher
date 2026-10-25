@@ -143,7 +143,7 @@ def write_application_queue(
         raise ValueError("minimum_score must be between 0 and 100")
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
-    eligible = []
+    eligible: list[dict[str, Any]] = []
     for row in rows:
         score = row.get("score", 0)
         status = row.get("ai_status", "disabled")
@@ -175,5 +175,5 @@ def write_application_queue(
         "count": len(eligible),
         "jobs": eligible,
     }
-    queue_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    queue_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return queue_path
