@@ -4,14 +4,14 @@ Prepare application materials for one job posting. This command is a drafting as
 
 ## Input
 
-The user should provide a job-posting URL, or identify a posting from a local Job Searcher report. If the user has not provided a URL or unambiguous job identity, ask one concise question and stop.
+The user should provide a job-posting URL, identify a posting from a local Job Searcher report, or ask to process the local `reports/application-queue.json` handoff. When using the queue, process only entries at or above its `minimum_score`; validate each URL and show the shortlist before drafting. If there is no URL, queue, or unambiguous job identity, ask one concise question and stop.
 
 ## Required context
 
 1. Read `.claude/candidate-profile.md` if it exists.
 2. If it does not exist, read `docs/candidate-profile.example.md` and ask the user to create their private profile before drafting. Do not treat example placeholders as facts.
 3. Fetch the job posting from the supplied URL when accessible. If access is blocked or the page is incomplete, ask the user to paste the job description. Never claim to have read inaccessible content.
-4. If available, use the relevant local report entry as discovery context, but treat the employer's posting as the source of truth for responsibilities and requirements.
+4. If using `reports/application-queue.json`, treat its score as a relevance ranking only, not an ATS pass probability. Do not process entries below the queue's minimum score. Use the original employer posting as the source of truth for responsibilities and requirements.
 
 ## Workflow
 

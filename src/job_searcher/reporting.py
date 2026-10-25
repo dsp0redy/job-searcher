@@ -128,3 +128,52 @@ def prune_old_reports(output_dir: str, retention_days: int) -> int:
         except OSError as exc:
             LOG.warning("Could not prune old report %s (%s)", path.name, type(exc).__name__)
     return removed
+
+
+def write_application_queue(
+    output_dir: str, rows: list[dict[str, Any]], minimum_score: int = 70
+) -> Path:
+    """Write a downstream handoff containing only sufficiently strong, usable matches.
+
+    The score is a relevance score, not an ATS pass probability. AI-failed or
+    deferred candidates are excluded so a fallback local score is not mistaken
+    for a completed AI evaluation.
+    """
+    if not 0 <= minimum_score <= 100:
+        raise ValueError("minimum_score must be between 0 and 100")
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    eligible: list[dict[str, Any]] = []
+    for row in rows:
+        score = row.get("score", 0)
+        status = row.get("ai_status", "disabled")
+        if not isinstance(score, int) or isinstance(score, bool):
+            continue
+        if score < minimum_score or status not in {"matched", "disabled"}:
+            continue
+        eligible.append({
+            "identity": row.get("identity", ""),
+            "company": row.get("company", ""),
+            "title": row.get("title", ""),
+            "location": row.get("location", "Unknown"),
+            "url": row.get("url", ""),
+            "score": score,
+            "score_basis": "ai_match" if status == "matched" else "local_heuristic",
+            "ai_status": status,
+            "reason": row.get("reason", ""),
+            "skill_hits": row.get("skill_hits", []),
+            "missing_skills": row.get("missing_skills", []),
+        })
+    eligible.sort(key=lambda item: (-item["score"], str(item["company"]).casefold(), str(item["title"]).casefold()))
+    queue_path = root / "application-queue.json"
+    payload = {
+        "schema_version": 1,
+        "minimum_score": minimum_score,
+        "score_note": "Relevance score out of 100; not an ATS score or probability of an interview.",
+        "requires_human_review": True,
+        "auto_submit": False,
+        "count": len(eligible),
+        "jobs": eligible,
+    }
+    queue_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return queue_path

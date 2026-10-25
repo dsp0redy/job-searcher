@@ -76,15 +76,21 @@ def install_sources(monkeypatch, jobs, failed=()):
 def test_end_to_end_local_scan_persists_and_writes_three_reports(tmp_path, monkeypatch):
     job = make_job()
     created = install_sources(monkeypatch, [job])
-    orchestrator = SearchOrchestrator(make_config(tmp_path))
+    orchestrator = SearchOrchestrator(make_config(tmp_path, threshold=0))
     summary = orchestrator.run(str(tmp_path / "reports"))
 
     assert summary["run_status"] == "success"
     assert summary["postings_fetched"] == 1
     assert summary["new_identities"] == 1
     assert summary["qualified_candidates"] == 1
-    assert len(summary["reports"]) == 4
+    assert len(summary["reports"]) == 5
     assert all(__import__("pathlib").Path(path).exists() for path in summary["reports"])
+    queue_path = __import__("pathlib").Path(summary["reports"][3])
+    import json
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    assert queue["minimum_score"] == 0
+    assert queue["count"] == 1
+    assert queue["jobs"][0]["url"] == str(job.url)
     assert all(source.closed for source in created.values())
     with orchestrator.store._connect() as db:
         run = db.execute("SELECT status FROM scan_runs WHERE run_id=?", (summary["run_id"],)).fetchone()

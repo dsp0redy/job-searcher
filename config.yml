@@ -23,7 +23,7 @@ storage:
   retention_days: 180
 matching:
   provider: "gemini"
-  threshold: 65
+  threshold: 70
   max_jobs_per_ai_batch: 3
   max_ai_jobs_per_scan: 40
 sources:

@@ -103,6 +103,6 @@ The scheduled scanner discovers and ranks jobs; this optional local workflow hel
 1. Install and configure [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview).
 2. Copy `docs/candidate-profile.example.md` to `.claude/candidate-profile.md` and replace placeholders with verified information.
 3. Run `/prepare-application https://employer.example/jobs/123` inside Claude Code.
-4. Review the generated job notes, tailored resume draft, cover letter, interview notes, and checklist under `applications/`. Confirm every statement before using the files.
+4. The scan exports `reports/application-queue.json` with only matches at or above the configured 70/100 threshold. Review/download the `reports/` artifact, then ask Claude Code to process that queue. Review the generated job notes, tailored resume draft, cover letter, interview notes, and checklist under `applications/`. Confirm every statement before using the files.
 
 The candidate profile and generated application packages are ignored by Git to reduce the risk of committing personal information. Do not put real resume details in GitHub Issues, PRs, or workflow logs. The workflow drafts documents only; you must personally review and submit the application. See [Application preparation workflow](docs/APPLICATION_WORKFLOW.md) for details.
