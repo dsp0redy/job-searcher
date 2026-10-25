@@ -20,7 +20,7 @@ from .matching import (
 )
 from .models import Job
 from .notifications import GitHubIssuePublisher
-from .reporting import prune_old_reports, write_digest, write_reports
+from .reporting import prune_old_reports, write_application_queue, write_digest, write_reports
 from .storage import JobStore
 
 LOG = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ class SearchOrchestrator:
 
                 rows.append(row)
 
-            paths = (*write_reports(output_dir, run_id, rows), write_digest(output_dir, run_id, rows))
+            queue_path = write_application_queue(output_dir, rows, self.config.matching.threshold)\n            paths = (*write_reports(output_dir, run_id, rows), queue_path, write_digest(output_dir, run_id, rows))
             input_rate = self.config.matching.input_cost_usd_per_million_tokens
             output_rate = self.config.matching.output_cost_usd_per_million_tokens
             estimated_ai_cost = (
