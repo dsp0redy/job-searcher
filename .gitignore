@@ -230,3 +230,8 @@ resume_analysis.md
 job_results.json
 scan_report.json
 scan_report.md
+
+
+# Private candidate profile and generated application drafts
+.claude/candidate-profile.md
+applications/
