@@ -109,7 +109,7 @@ jobs:
               'Review the run logs and uploaded report artifacts. Confirm source URLs, rate limits, provider credentials, and GitHub permissions before rerunning.',
               '',
               'This alert is updated in place to avoid creating one issue per failed run.'
-            ].join('\\n');
+            ].join('\n');
             if (existing) {
               await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
             } else {
@@ -130,7 +130,7 @@ jobs:
             if (existing) {
               await github.rest.issues.update({
                 owner, repo, issue_number: existing.number, state: 'closed',
-                body: (existing.body || '') + '\\n\\nResolved by successful workflow run: ' +
+                body: (existing.body || '') + '\n\nResolved by successful workflow run: ' +
                   context.serverUrl + '/' + owner + '/' + repo + '/actions/runs/' + context.runId
               });
             }
